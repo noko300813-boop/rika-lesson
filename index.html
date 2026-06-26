@@ -68,6 +68,81 @@
             cursor: grabbing !important;
         }
     </style>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script>
+        const firebaseConfig = {
+            databaseURL: "https://nen-seibutu-default-rtdb.firebaseio.com"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        const thinkIds = [
+            { id: 'user-note-digestion-think',   label: '消化' },
+            { id: 'user-note-absorption-think',  label: '吸収' },
+            { id: 'user-note-respiration-think', label: '呼吸' },
+            { id: 'user-note-circulation-think', label: '循環' },
+            { id: 'user-note-excretion-think',   label: '排出' },
+            { id: 'user-note-stimulus-think',    label: '刺激' },
+            { id: 'user-note-nerve-think',       label: '神経' },
+            { id: 'user-note-muscle-think',      label: '筋肉' },
+        ];
+
+        function setupSharing() {
+            thinkIds.forEach(function({ id, label }) {
+                const textarea = document.getElementById(id);
+                if (!textarea) return;
+
+                // 送信ボタン
+                const btn = document.createElement('button');
+                btn.textContent = '👥 クラスに共有する';
+                btn.className = 'mt-2 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-lg transition-all block';
+                btn.onclick = function() {
+                    const name = localStorage.getItem('student_name') || '名無し';
+                    const text = textarea.value.trim();
+                    if (!text) { alert('考えを書いてから共有してね！'); return; }
+                    const key = name.replace(/\s/g,'_') + '_' + Date.now();
+                    db.ref('thoughts/' + id + '/' + key).set({
+                        name: name,
+                        text: text,
+                        time: new Date().toLocaleTimeString('ja-JP')
+                    });
+                    btn.textContent = '✅ 共有しました！';
+                    btn.disabled = true;
+                    setTimeout(function() { btn.textContent = '👥 クラスに共有する'; btn.disabled = false; }, 3000);
+                };
+                textarea.parentNode.appendChild(btn);
+
+                // クラスの共有欄
+                const shareBox = document.createElement('div');
+                shareBox.className = 'mt-3 bg-indigo-50 rounded-xl p-3 border border-indigo-200';
+                shareBox.innerHTML = '<p class="text-xs font-black text-indigo-900 mb-2">👥 クラスのみんなの考え（' + label + '）</p><div id="share-' + id + '" class="space-y-2 max-h-48 overflow-y-auto"><p class="text-xs text-slate-400">まだ誰も共有していません</p></div>';
+                textarea.parentNode.appendChild(shareBox);
+
+                // リアルタイム表示
+                db.ref('thoughts/' + id).on('value', function(snapshot) {
+                    const container = document.getElementById('share-' + id);
+                    if (!container) return;
+                    container.innerHTML = '';
+                    if (!snapshot.exists()) {
+                        container.innerHTML = '<p class="text-xs text-slate-400">まだ誰も共有していません</p>';
+                        return;
+                    }
+                    const entries = [];
+                    snapshot.forEach(function(child) { entries.push(child.val()); });
+                    entries.reverse().forEach(function(entry) {
+                        const el = document.createElement('div');
+                        el.className = 'bg-white rounded-lg p-2.5 border border-indigo-100 text-xs';
+                        el.innerHTML = '<span class="font-bold text-indigo-700">' + entry.name + '</span><span class="text-slate-400 ml-1">' + entry.time + '</span><p class="text-slate-700 mt-1">' + entry.text + '</p>';
+                        container.appendChild(el);
+                    });
+                });
+            });
+        }
+
+        window.addEventListener('load', setupSharing);
+    </script>
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col transition-colors duration-300">
 
