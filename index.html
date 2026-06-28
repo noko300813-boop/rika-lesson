@@ -223,130 +223,156 @@
         }
 
         // ==================== 名前管理 ====================
-        // adminClickCount / openNameModal / closeNameModal / handleAdminClick はbody後scriptで定義
+        let adminClickCount = 0, adminClickTimer = null;
 
-        // openAdminModal / switchAdminTab はbody後scriptで定義
+        function handleAdminClick() {
+            adminClickCount++;
+            if (adminClickTimer) clearTimeout(adminClickTimer);
+            if (adminClickCount >= 5) {
+                adminClickCount = 0;
+                openAdminModal();
+            } else {
+                adminClickTimer = setTimeout(() => { adminClickCount = 0; }, 2000);
+            }
+        }
+
+        function openNameModal() {
+            document.getElementById('name-modal').classList.remove('hidden');
+            document.getElementById('name-modal').classList.add('flex');
+            loadNameList();
+        }
+
+        function closeNameModal() {
+            document.getElementById('name-modal').classList.add('hidden');
+            document.getElementById('name-modal').classList.remove('flex');
+        }
+
+        function openAdminModal() {
+            document.getElementById('admin-modal').classList.remove('hidden');
+            document.getElementById('admin-modal').classList.add('flex');
+            loadAdminNameList();
+        }
+
+        function closeAdminModal() {
+            document.getElementById('admin-modal').classList.add('hidden');
+            document.getElementById('admin-modal').classList.remove('flex');
+        }
+
+        function loadNameList() {
+            const prevName = localStorage.getItem('student_name') || '';
+            const hint = document.getElementById('name-modal-hint');
+            if (hint) {
+                hint.textContent = prevName ? '前回：' + prevName : '';
+            }
+            db.ref('thoughts/students').once('value', function(snap) {
+                const list = document.getElementById('name-list');
+                list.innerHTML = '';
+                if (!snap.exists()) {
+                    list.innerHTML = '<p class="col-span-2 text-center text-slate-400 text-sm py-4">まだ名前が登録されていません</p>';
+                    return;
+                }
+                snap.forEach(function(child) {
+                    const name = child.val();
+                    const btn = document.createElement('button');
+                    btn.className = 'py-3 px-2 rounded-xl text-sm font-bold border-2 transition-all border-slate-200 bg-slate-50 hover:border-emerald-400 hover:bg-emerald-50 text-slate-700 active:scale-95';
+                    btn.innerHTML = '👤 ' + name;
+                    btn.onclick = function() { selectName(name); };
+                    list.appendChild(btn);
+                });
+            });
+        }
+
+        function selectName(name) {
+            localStorage.setItem('student_name', name);
+            document.getElementById('header-name-display').textContent = name;
+            closeNameModal();
+            wsLoadForName(name);
+        }
+
+        function loadAdminNameList() {
+            db.ref('thoughts/students').once('value', function(snap) {
+                const list = document.getElementById('admin-name-list');
+                list.innerHTML = '';
+                if (!snap.exists()) {
+                    list.innerHTML = '<p class="text-slate-400 text-xs text-center py-3">まだ登録されていません</p>';
+                    return;
+                }
+                snap.forEach(function(child) {
+                    const key = child.key;
+                    const name = child.val();
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2';
+                    row.innerHTML = '<span class="text-sm font-medium text-slate-700">👤 ' + name + '</span>'
+                        + '<button onclick="adminDeleteName(\'' + key + '\')" class="text-[10px] text-red-500 hover:text-red-700 font-bold px-2 py-1 rounded hover:bg-red-50 transition-all">削除</button>';
+                    list.appendChild(row);
+                });
+            });
+        }
+
+        function adminAddName() {
+            const input = document.getElementById('admin-new-name');
+            const name = input.value.trim();
+            if (!name) { alert('名前を入力してください'); return; }
+            db.ref('thoughts/students').push(name).then(function() {
+                input.value = '';
+                loadAdminNameList();
+            });
+        }
+
+        function adminDeleteName(key) {
+            if (!confirm('この生徒名を削除しますか？')) return;
+            db.ref('thoughts/students/' + key).remove().then(function() {
+                loadAdminNameList();
+            });
+        }
+
+        // 起動時：必ず名前選択モーダルを表示する
+        window.addEventListener('DOMContentLoaded', function() {
+            openNameModal();
+        });
 
         window.addEventListener('load', setupSharing);
     </script>
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col transition-colors duration-300">
 
-    <!-- 保存インジケーター（右下固定） -->
-    <div id="ws-saved-indicator" class="fixed bottom-4 right-4 z-50 opacity-0 transition-opacity duration-500 pointer-events-none">
-        <div class="bg-emerald-600 text-white text-xs font-bold px-3 py-2 rounded-xl shadow-lg flex items-center gap-1.5">
-            <i class="fa-solid fa-cloud-arrow-up"></i> 保存しました
-        </div>
-    </div>
-
     <!-- ===== 名前選択モーダル ===== -->
     <div id="name-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
-            <div class="text-center mb-4">
+            <div class="text-center mb-5">
                 <div class="text-4xl mb-2">👋</div>
                 <h2 class="text-xl font-black text-slate-800">あなたはだれ？</h2>
+                <p class="text-xs text-slate-500 mt-1">名前を選んでスタート！</p>
                 <p id="name-modal-hint" class="text-xs text-emerald-600 font-bold mt-1"></p>
             </div>
+            <div id="name-list" class="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto mb-4">
+                <p class="col-span-2 text-center text-slate-400 text-sm py-4">読み込み中…</p>
+            </div>
+            <p class="text-[10px] text-slate-400 text-center">名前が見つからない場合は先生に伝えてください</p>
+        </div>
+    </div>
 
-            <!-- 直接入力フォーム（常に表示） -->
+    <!-- ===== 先生用管理モーダル ===== -->
+    <div id="admin-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-black text-slate-800">🔧 生徒名の管理</h2>
+                <button onclick="closeAdminModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
+            </div>
             <div class="mb-4">
-                <label class="text-xs font-bold text-slate-600 block mb-1.5">名前を入力してスタート</label>
+                <label class="text-xs font-bold text-slate-600 block mb-1">新しい生徒名を追加</label>
                 <div class="flex gap-2">
-                    <input id="name-direct-input" type="text" placeholder="例：山田太郎"
-                        class="flex-1 text-sm border-2 border-emerald-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400"
-                        onkeydown="if(event.key==='Enter') confirmDirectName()">
-                    <button onclick="confirmDirectName()"
-                        class="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm px-4 py-2 rounded-xl transition-all">
-                        決定
-                    </button>
+                    <input id="admin-new-name" type="text" placeholder="例：山田太郎" class="flex-1 text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                    <button onclick="adminAddName()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-2 rounded-lg transition-all">追加</button>
                 </div>
             </div>
-
-            <!-- リストから選ぶ（登録済みの場合） -->
-            <div id="name-list-section" class="hidden">
-                <div class="flex items-center gap-2 mb-2">
-                    <div class="flex-1 border-t border-slate-200"></div>
-                    <span class="text-[10px] text-slate-400 font-bold px-1">または一覧から選ぶ</span>
-                    <div class="flex-1 border-t border-slate-200"></div>
-                </div>
-                <div id="name-list" class="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                    <p class="col-span-2 text-center text-slate-400 text-sm py-2">読み込み中…</p>
+            <div class="mb-2">
+                <label class="text-xs font-bold text-slate-600 block mb-2">現在の生徒リスト</label>
+                <div id="admin-name-list" class="space-y-1.5 max-h-56 overflow-y-auto">
+                    <p class="text-slate-400 text-xs text-center py-3">読み込み中…</p>
                 </div>
             </div>
-        </div>
-    </div>
-
-    <!-- ===== 先生用管理モーダル（拡張版） ===== -->
-    <div id="admin-modal" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/60 backdrop-blur-sm p-2">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-auto flex flex-col" style="max-height:92vh">
-
-            <!-- ヘッダー -->
-            <div class="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100 shrink-0">
-                <h2 class="text-lg font-black text-slate-800 flex items-center gap-2">
-                    <i class="fa-solid fa-chalkboard-teacher text-emerald-600"></i> 先生用管理画面
-                </h2>
-                <button onclick="closeAdminModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">✕</button>
-            </div>
-
-            <!-- タブ -->
-            <div class="flex border-b border-slate-100 shrink-0">
-                <button onclick="switchAdminTab('names')" id="admin-tab-names"
-                    class="flex-1 py-2.5 text-xs font-black text-emerald-700 border-b-2 border-emerald-500 transition-all">
-                    👤 生徒名の管理
-                </button>
-                <button onclick="switchAdminTab('dashboard')" id="admin-tab-dashboard"
-                    class="flex-1 py-2.5 text-xs font-bold text-slate-500 border-b-2 border-transparent hover:text-slate-700 transition-all">
-                    📊 回答ダッシュボード
-                </button>
-            </div>
-
-            <!-- タブ内容（スクロール） -->
-            <div class="overflow-y-auto flex-1 p-5">
-
-                <!-- 生徒名管理タブ -->
-                <div id="admin-panel-names">
-                    <div class="mb-4">
-                        <label class="text-xs font-bold text-slate-600 block mb-1">新しい生徒名を追加</label>
-                        <div class="flex gap-2">
-                            <input id="admin-new-name" type="text" placeholder="例：山田太郎"
-                                class="flex-1 text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-400">
-                            <button onclick="adminAddName()"
-                                class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-2 rounded-lg transition-all">追加</button>
-                        </div>
-                    </div>
-                    <label class="text-xs font-bold text-slate-600 block mb-2">現在の生徒リスト</label>
-                    <div id="admin-name-list" class="space-y-1.5">
-                        <p class="text-slate-400 text-xs text-center py-3">読み込み中…</p>
-                    </div>
-                    <p class="text-[10px] text-slate-400 mt-4 text-center">変更はリアルタイムで全員のタブレットに反映されます</p>
-                </div>
-
-                <!-- ダッシュボードタブ -->
-                <div id="admin-panel-dashboard" class="hidden">
-                    <div class="flex items-center justify-between mb-3">
-                        <p class="text-xs text-slate-500">生徒名をタップすると入力内容を確認できます</p>
-                        <button onclick="loadDashboard()"
-                            class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg transition-all flex items-center gap-1">
-                            <i class="fa-solid fa-rotate-right"></i> 更新
-                        </button>
-                    </div>
-                    <div id="dashboard-list" class="space-y-2">
-                        <p class="text-slate-400 text-xs text-center py-6">「更新」を押してください</p>
-                    </div>
-                </div>
-
-            </div>
-        </div>
-    </div>
-
-    <!-- ===== 生徒詳細モーダル ===== -->
-    <div id="student-detail-modal" class="fixed inset-0 z-[45] hidden items-center justify-center bg-black/70 backdrop-blur-sm p-2">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xl mx-auto flex flex-col" style="max-height:92vh">
-            <div class="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100 shrink-0">
-                <h2 id="detail-modal-title" class="text-base font-black text-slate-800"></h2>
-                <button onclick="closeDetailModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">✕</button>
-            </div>
-            <div id="detail-modal-body" class="overflow-y-auto flex-1 p-5 space-y-4 text-xs text-slate-700"></div>
+            <p class="text-[10px] text-slate-400 mt-3 text-center">変更はリアルタイムで全員のタブレットに反映されます</p>
         </div>
     </div>
 
@@ -588,214 +614,152 @@
 
         <!-- ==================== 1. 消化・実験4 ==================== -->
         <section id="section-digestion" class="tab-content hidden space-y-6">
-            <!-- ========================================================
-                 🔬 探究型導入ブロック（画面1〜3）
-                 ======================================================== -->
-
-            <!-- ===== プログレスバー ===== -->
+            <!-- プログレスバー -->
             <div class="bg-white border border-amber-200 rounded-2xl px-4 py-3">
                 <div class="flex items-center justify-between mb-2">
-                    <span class="text-xs font-black text-amber-800 flex items-center gap-1.5">
-                        <i class="fa-solid fa-shoe-prints text-amber-500"></i> 実験設計への道
-                    </span>
+                    <span class="text-xs font-black text-amber-800 flex items-center gap-1.5"><i class="fa-solid fa-shoe-prints text-amber-500"></i> 実験設計への道</span>
                     <span id="intro-progress-label" class="text-xs font-bold text-amber-600">STEP 1 / 3</span>
                 </div>
                 <div class="flex gap-1.5">
-                    <div id="intro-prog-1" class="flex-1 h-2 rounded-full bg-amber-400 transition-all duration-500"></div>
-                    <div id="intro-prog-2" class="flex-1 h-2 rounded-full bg-slate-200 transition-all duration-500"></div>
-                    <div id="intro-prog-3" class="flex-1 h-2 rounded-full bg-slate-200 transition-all duration-500"></div>
+                    <div id="intro-prog-1" class="flex-1 h-2 rounded-full bg-amber-400 transition-all"></div>
+                    <div id="intro-prog-2" class="flex-1 h-2 rounded-full bg-slate-200 transition-all"></div>
+                    <div id="intro-prog-3" class="flex-1 h-2 rounded-full bg-slate-200 transition-all"></div>
                 </div>
-                <div class="flex text-[10px] text-slate-500 mt-1.5 justify-between px-0.5">
-                    <span>① なぜ甘くなる？</span>
-                    <span>② 試薬の使い方</span>
-                    <span>③ 実験を設計する</span>
+                <div class="flex text-[10px] text-slate-500 mt-1.5 justify-between">
+                    <span>① なぜ甘くなる？</span><span>② 試薬の使い方</span><span>③ 実験を設計する</span>
                 </div>
             </div>
 
-            <!-- ===== 画面1：オープニング ===== -->
+            <!-- 画面1 -->
             <div id="intro-screen-1" class="space-y-4">
-                <div class="bg-gradient-to-br from-amber-500 to-orange-500 text-white p-6 rounded-2xl shadow-md">
-                    <div class="text-4xl mb-3 text-center">🍚</div>
-                    <h2 class="text-xl font-black text-center mb-2">ご飯を30回噛み続けると…？</h2>
-                    <p class="text-sm text-amber-100 text-center leading-relaxed">白いご飯を、噛めば噛むほど<strong class="text-white">甘く</strong>なっていく。これって不思議じゃない？</p>
+                <div class="bg-gradient-to-br from-amber-500 to-orange-500 text-white p-6 rounded-2xl shadow-md text-center">
+                    <div class="text-4xl mb-3">🍚</div>
+                    <h2 class="text-xl font-black mb-2">ご飯を30回噛み続けると…？</h2>
+                    <p class="text-sm text-amber-100">白いご飯を噛めば噛むほど<strong class="text-white">甘く</strong>なる。なぜ？</p>
                 </div>
                 <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                    <p class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
-                        <i class="fa-solid fa-circle-question text-amber-500"></i>
-                        甘くなった「犯人」はどっちだと思う？
-                    </p>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="opening-quiz-choices">
-                        <button onclick="selectOpeningChoice('A')" id="opening-A"
-                            class="opening-choice p-4 rounded-xl border-2 border-slate-200 bg-slate-50 text-left transition-all hover:shadow-md hover:border-amber-300 hover:bg-amber-50">
-                            <div class="text-2xl mb-2">🦷</div>
-                            <p class="font-black text-slate-800 text-sm">A：歯の力</p>
-                            <p class="text-xs text-slate-500 mt-1 leading-relaxed">細かく砕かれたことで、甘さを感じやすくなった</p>
+                    <p class="text-sm font-bold text-slate-700 mb-4">💭 甘くなった「犯人」はどっち？</p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button onclick="selectOpeningChoice('A')" id="opening-A" class="p-4 rounded-xl border-2 border-slate-200 bg-slate-50 text-left hover:border-amber-300 hover:bg-amber-50 transition-all">
+                            <div class="text-2xl mb-2">🦷</div><p class="font-black text-sm">A：歯の力</p><p class="text-xs text-slate-500 mt-1">細かく砕かれて甘さを感じやすくなった</p>
                         </button>
-                        <button onclick="selectOpeningChoice('B')" id="opening-B"
-                            class="opening-choice p-4 rounded-xl border-2 border-slate-200 bg-slate-50 text-left transition-all hover:shadow-md hover:border-amber-300 hover:bg-amber-50">
-                            <div class="text-2xl mb-2">💧</div>
-                            <p class="font-black text-slate-800 text-sm">B：だ液の力</p>
-                            <p class="text-xs text-slate-500 mt-1 leading-relaxed">だ液に含まれる何かが、ご飯を変化させた</p>
+                        <button onclick="selectOpeningChoice('B')" id="opening-B" class="p-4 rounded-xl border-2 border-slate-200 bg-slate-50 text-left hover:border-amber-300 hover:bg-amber-50 transition-all">
+                            <div class="text-2xl mb-2">💧</div><p class="font-black text-sm">B：だ液の力</p><p class="text-xs text-slate-500 mt-1">だ液の何かがご飯を変化させた</p>
                         </button>
                     </div>
                     <div id="opening-feedback" class="hidden mt-4 space-y-3">
                         <div id="opening-feedback-A" class="hidden bg-red-50 border border-red-200 rounded-xl p-4">
-                            <p class="font-black text-red-700 text-sm flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation"></i> 惜しい！</p>
-                            <p class="text-xs text-slate-600 mt-1 leading-relaxed">歯で細かくなっても、デンプン自体の「甘さ」は変わらないんだ。実は、だ液が「デンプン」を「糖（マルトース）」に変えているから甘くなるんだよ。</p>
+                            <p class="font-black text-red-700 text-sm">❌ 惜しい！</p>
+                            <p class="text-xs text-slate-600 mt-1">だ液の<strong>アミラーゼ</strong>がデンプンを糖に分解するから甘くなるんだ！</p>
                         </div>
                         <div id="opening-feedback-B" class="hidden bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-                            <p class="font-black text-emerald-700 text-sm flex items-center gap-2"><i class="fa-solid fa-circle-check"></i> 正解！</p>
-                            <p class="text-xs text-slate-600 mt-1 leading-relaxed">だ液に含まれる<strong>アミラーゼ</strong>という消化酵素が、デンプンを糖（マルトース）に分解するから甘くなるんだ！</p>
+                            <p class="font-black text-emerald-700 text-sm">✅ 正解！</p>
+                            <p class="text-xs text-slate-600 mt-1">だ液の<strong>アミラーゼ</strong>がデンプンを糖に分解するから甘くなるんだ！</p>
                         </div>
                         <div class="bg-yellow-50 border border-yellow-300 rounded-xl p-4">
-                            <p class="text-xs font-black text-yellow-900 mb-1 flex items-center gap-1.5"><i class="fa-solid fa-lightbulb text-yellow-500"></i> 今日の学習課題</p>
-                            <p class="text-sm font-bold text-slate-800 leading-relaxed">「だ液がデンプンを変化させた」ことを、<strong>実験で証明する</strong>にはどうすればいい？</p>
+                            <p class="text-xs font-black text-yellow-900 mb-1">💡 今日の学習課題</p>
+                            <p class="text-sm font-bold text-slate-800">「だ液がデンプンを変化させた」を実験で証明するには？</p>
                         </div>
-                        <button onclick="goIntroScreen(2)"
-                            class="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
-                            次：実験道具を覚えよう <i class="fa-solid fa-arrow-right"></i>
-                        </button>
+                        <button onclick="goIntroScreen(2)" class="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-xl transition-all flex items-center justify-center gap-2">次：実験道具を覚えよう <i class="fa-solid fa-arrow-right"></i></button>
                     </div>
                 </div>
             </div>
 
-            <!-- ===== 画面2：アイテム図鑑＋確認クイズ ===== -->
+            <!-- 画面2 -->
             <div id="intro-screen-2" class="hidden space-y-4">
                 <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                    <h2 class="text-base font-black text-slate-800 mb-1 flex items-center gap-2">
-                        <i class="fa-solid fa-flask text-blue-500"></i> 実験の「武器」を覚えよう
-                    </h2>
-                    <p class="text-xs text-slate-500 mb-4">デンプンと糖を見分ける2つの試薬の使い方を覚えてから次のステップへ進もう。</p>
+                    <h2 class="text-base font-black mb-3 flex items-center gap-2"><i class="fa-solid fa-flask text-blue-500"></i>実験の「武器」を覚えよう</h2>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
-                        <div class="rounded-xl border-2 border-indigo-200 bg-indigo-50 p-4 space-y-2">
-                            <div class="flex items-center gap-2">
-                                <span class="w-9 h-9 rounded-full bg-indigo-500 text-white flex items-center justify-center text-lg shrink-0">🧪</span>
-                                <div>
-                                    <p class="font-black text-indigo-900 text-sm">ヨウ素液</p>
-                                    <p class="text-[10px] text-indigo-600">デンプンを検出する</p>
-                                </div>
-                            </div>
-                            <div class="bg-white rounded-lg p-3 border border-indigo-100 space-y-1.5 text-xs text-slate-700">
-                                <p><span class="font-bold text-indigo-700">デンプンあり</span> → <span class="font-black text-indigo-800 bg-indigo-100 px-1.5 py-0.5 rounded">青紫色</span> に変化</p>
-                                <p><span class="font-bold text-slate-500">デンプンなし</span> → <span class="font-bold text-amber-700">うすい黄色</span>のまま（変化なし）</p>
-                                <p class="text-[11px] text-slate-500 border-t pt-1.5 mt-1">⚠️ 加熱は<strong>不要</strong></p>
+                        <div class="rounded-xl border-2 border-indigo-200 bg-indigo-50 p-4">
+                            <p class="font-black text-indigo-900 text-sm mb-2">🧪 ヨウ素液（デンプンを検出）</p>
+                            <div class="bg-white rounded-lg p-3 border border-indigo-100 text-xs space-y-1">
+                                <p><span class="font-bold text-indigo-700">デンプンあり</span> → 青紫色</p>
+                                <p><span class="font-bold text-slate-500">デンプンなし</span> → うすい黄色のまま</p>
+                                <p class="text-slate-500 border-t pt-1 mt-1">⚠️ 加熱不要</p>
                             </div>
                         </div>
-                        <div class="rounded-xl border-2 border-orange-200 bg-orange-50 p-4 space-y-2">
-                            <div class="flex items-center gap-2">
-                                <span class="w-9 h-9 rounded-full bg-orange-500 text-white flex items-center justify-center text-lg shrink-0">🔬</span>
-                                <div>
-                                    <p class="font-black text-orange-900 text-sm">ベネジクト液</p>
-                                    <p class="text-[10px] text-orange-600">糖を検出する</p>
-                                </div>
-                            </div>
-                            <div class="bg-white rounded-lg p-3 border border-orange-100 space-y-1.5 text-xs text-slate-700">
-                                <p><span class="font-bold text-orange-700">糖あり</span> → <span class="font-black text-orange-800 bg-orange-100 px-1.5 py-0.5 rounded">赤褐色の沈殿</span> ができる</p>
-                                <p><span class="font-bold text-slate-500">糖なし</span> → <span class="font-bold text-blue-700">青色</span>のまま（変化なし）</p>
-                                <p class="text-[11px] text-slate-500 border-t pt-1.5 mt-1">⚠️ <strong>加熱が必要</strong>（ガスバーナーや湯せん）</p>
+                        <div class="rounded-xl border-2 border-orange-200 bg-orange-50 p-4">
+                            <p class="font-black text-orange-900 text-sm mb-2">🔬 ベネジクト液（糖を検出）</p>
+                            <div class="bg-white rounded-lg p-3 border border-orange-100 text-xs space-y-1">
+                                <p><span class="font-bold text-orange-700">糖あり</span> → 赤褐色の沈殿</p>
+                                <p><span class="font-bold text-slate-500">糖なし</span> → 青色のまま</p>
+                                <p class="text-slate-500 border-t pt-1 mt-1">⚠️ <strong>加熱が必要</strong></p>
                             </div>
                         </div>
                     </div>
                     <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
-                        <p class="text-xs font-black text-slate-700 flex items-center gap-1.5"><i class="fa-solid fa-circle-check text-emerald-500"></i> 確認クイズ：全問正解で次のステップへ！</p>
+                        <p class="text-xs font-black">✅ 確認クイズ：全問正解で次へ！</p>
                         <div id="reagent-q1" class="space-y-2">
-                            <p class="text-xs font-bold text-slate-800">Q1. デンプンを検出する試薬はどれ？</p>
-                            <div class="flex flex-col sm:flex-row gap-2">
-                                <button onclick="checkReagentQ(1,'A')" data-qid="1" data-val="A" class="reagent-choice flex-1 py-2 px-3 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:border-indigo-400 hover:bg-indigo-50 transition-all">ヨウ素液</button>
-                                <button onclick="checkReagentQ(1,'B')" data-qid="1" data-val="B" class="reagent-choice flex-1 py-2 px-3 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:border-indigo-400 hover:bg-indigo-50 transition-all">ベネジクト液</button>
+                            <p class="text-xs font-bold">Q1. デンプンを検出する試薬は？</p>
+                            <div class="flex gap-2">
+                                <button onclick="checkReagentQ(1,'A')" data-val="A" class="reagent-choice flex-1 py-2 px-3 rounded-lg border border-slate-300 bg-white text-xs font-bold hover:border-indigo-400 transition-all">ヨウ素液</button>
+                                <button onclick="checkReagentQ(1,'B')" data-val="B" class="reagent-choice flex-1 py-2 px-3 rounded-lg border border-slate-300 bg-white text-xs font-bold hover:border-indigo-400 transition-all">ベネジクト液</button>
                             </div>
-                            <p id="reagent-q1-feedback" class="hidden text-xs font-bold mt-1"></p>
+                            <p id="reagent-q1-feedback" class="hidden text-xs font-bold"></p>
                         </div>
-                        <div id="reagent-q2" class="space-y-2 opacity-40 pointer-events-none transition-all">
-                            <p class="text-xs font-bold text-slate-800">Q2. 加熱が必要な試薬はどれ？</p>
-                            <div class="flex flex-col sm:flex-row gap-2">
-                                <button onclick="checkReagentQ(2,'A')" data-qid="2" data-val="A" class="reagent-choice flex-1 py-2 px-3 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:border-orange-400 hover:bg-orange-50 transition-all">ヨウ素液</button>
-                                <button onclick="checkReagentQ(2,'B')" data-qid="2" data-val="B" class="reagent-choice flex-1 py-2 px-3 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:border-orange-400 hover:bg-orange-50 transition-all">ベネジクト液</button>
+                        <div id="reagent-q2" class="space-y-2 opacity-40 pointer-events-none">
+                            <p class="text-xs font-bold">Q2. 加熱が必要な試薬は？</p>
+                            <div class="flex gap-2">
+                                <button onclick="checkReagentQ(2,'A')" data-val="A" class="reagent-choice flex-1 py-2 px-3 rounded-lg border border-slate-300 bg-white text-xs font-bold hover:border-orange-400 transition-all">ヨウ素液</button>
+                                <button onclick="checkReagentQ(2,'B')" data-val="B" class="reagent-choice flex-1 py-2 px-3 rounded-lg border border-slate-300 bg-white text-xs font-bold hover:border-orange-400 transition-all">ベネジクト液</button>
                             </div>
-                            <p id="reagent-q2-feedback" class="hidden text-xs font-bold mt-1"></p>
+                            <p id="reagent-q2-feedback" class="hidden text-xs font-bold"></p>
                         </div>
-                        <div id="reagent-q3" class="space-y-2 opacity-40 pointer-events-none transition-all">
-                            <p class="text-xs font-bold text-slate-800">Q3. ベネジクト液に糖があると何色になる？</p>
-                            <div class="flex flex-col sm:flex-row gap-2">
-                                <button onclick="checkReagentQ(3,'A')" data-qid="3" data-val="A" class="reagent-choice flex-1 py-2 px-3 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:border-orange-400 hover:bg-orange-50 transition-all">青紫色</button>
-                                <button onclick="checkReagentQ(3,'B')" data-qid="3" data-val="B" class="reagent-choice flex-1 py-2 px-3 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:border-orange-400 hover:bg-orange-50 transition-all">赤褐色</button>
+                        <div id="reagent-q3" class="space-y-2 opacity-40 pointer-events-none">
+                            <p class="text-xs font-bold">Q3. ベネジクト液で糖があると何色？</p>
+                            <div class="flex gap-2">
+                                <button onclick="checkReagentQ(3,'A')" data-val="A" class="reagent-choice flex-1 py-2 px-3 rounded-lg border border-slate-300 bg-white text-xs font-bold hover:border-orange-400 transition-all">青紫色</button>
+                                <button onclick="checkReagentQ(3,'B')" data-val="B" class="reagent-choice flex-1 py-2 px-3 rounded-lg border border-slate-300 bg-white text-xs font-bold hover:border-orange-400 transition-all">赤褐色</button>
                             </div>
-                            <p id="reagent-q3-feedback" class="hidden text-xs font-bold mt-1"></p>
+                            <p id="reagent-q3-feedback" class="hidden text-xs font-bold"></p>
                         </div>
                     </div>
-                    <button id="btn-goto-screen3" onclick="goIntroScreen(3)" disabled
-                        class="w-full mt-4 py-3 bg-slate-300 text-slate-500 font-black rounded-xl transition-all flex items-center justify-center gap-2 cursor-not-allowed">
-                        <i class="fa-solid fa-lock text-sm"></i> 全問正解で次へ進める
+                    <button id="btn-goto-screen3" onclick="goIntroScreen(3)" disabled class="w-full mt-4 py-3 bg-slate-300 text-slate-500 font-black rounded-xl flex items-center justify-center gap-2 cursor-not-allowed">
+                        <i class="fa-solid fa-lock"></i> 全問正解で次へ
                     </button>
                 </div>
             </div>
 
-            <!-- ===== 画面3：実験デザイン（フェーズ1） ===== -->
+            <!-- 画面3 -->
             <div id="intro-screen-3" class="hidden space-y-4">
                 <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                    <div class="flex items-center gap-2 mb-1">
-                        <span class="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-bold">フェーズ1：実験を設計しよう</span>
-                    </div>
-                    <h2 class="text-base font-black text-slate-800 mt-2 mb-1">「だ液がデンプンを変化させた」を証明する実験を作ろう</h2>
-                    <p class="text-xs text-slate-500 mb-5 leading-relaxed">試験管Aには「デンプン＋だ液」が入っている。だ液の効果を証明するには「対照実験」が必要だ。どんな条件を選べばよいか考えてみよう。</p>
-                    <div class="space-y-5">
-                        <div class="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
-                            <p class="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                                <span class="w-5 h-5 rounded-full bg-amber-400 text-white flex items-center justify-center text-[11px] font-black shrink-0">1</span>
-                                試験管Aの「対照実験」として正しい組み合わせはどれ？
-                            </p>
-                            <p class="text-xs text-slate-500 leading-relaxed">対照実験は「調べたい条件だけ」を変えて他はすべて同じにする。試験管Aは「デンプン＋だ液」だよ。</p>
-                            <div class="grid grid-cols-1 gap-2" id="design-q1-choices">
-                                <button onclick="selectDesignQ(1,'A')" id="design-q1-A" class="design-choice text-left p-3 rounded-xl border-2 border-slate-200 bg-white hover:border-amber-300 hover:bg-amber-50 transition-all text-xs font-bold text-slate-700">
-                                    ア：デンプン ＋ <span class="text-purple-700">水</span>（だ液の代わりに水を使う）
-                                </button>
-                                <button onclick="selectDesignQ(1,'B')" id="design-q1-B" class="design-choice text-left p-3 rounded-xl border-2 border-slate-200 bg-white hover:border-amber-300 hover:bg-amber-50 transition-all text-xs font-bold text-slate-700">
-                                    イ：水 ＋ <span class="text-blue-700">だ液</span>（デンプンを入れない）
-                                </button>
-                                <button onclick="selectDesignQ(1,'C')" id="design-q1-C" class="design-choice text-left p-3 rounded-xl border-2 border-slate-200 bg-white hover:border-amber-300 hover:bg-amber-50 transition-all text-xs font-bold text-slate-700">
-                                    ウ：デンプン だけ（試薬を何も加えない）
-                                </button>
+                    <span class="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-bold">フェーズ1：実験を設計しよう</span>
+                    <h2 class="text-base font-black mt-2 mb-3">「だ液がデンプンを変化させた」を証明する実験を作ろう</h2>
+                    <div class="space-y-4">
+                        <div class="bg-slate-50 rounded-xl p-4 border space-y-2">
+                            <p class="text-xs font-black">① 対照実験（試験管Aはデンプン＋だ液）</p>
+                            <div id="design-q1-choices" class="space-y-2">
+                                <button onclick="selectDesignQ(1,'A')" id="design-q1-A" class="design-choice w-full text-left p-3 rounded-xl border-2 border-slate-200 bg-white text-xs font-bold transition-all hover:border-amber-300">ア：デンプン＋水</button>
+                                <button onclick="selectDesignQ(1,'B')" id="design-q1-B" class="design-choice w-full text-left p-3 rounded-xl border-2 border-slate-200 bg-white text-xs font-bold transition-all hover:border-amber-300">イ：水＋だ液</button>
+                                <button onclick="selectDesignQ(1,'C')" id="design-q1-C" class="design-choice w-full text-left p-3 rounded-xl border-2 border-slate-200 bg-white text-xs font-bold transition-all hover:border-amber-300">ウ：デンプンだけ</button>
                             </div>
-                            <p id="design-q1-feedback" class="hidden text-xs font-bold mt-1 p-2 rounded-lg"></p>
+                            <p id="design-q1-feedback" class="hidden text-xs font-bold p-2 rounded-lg"></p>
                         </div>
-                        <div id="design-q2-block" class="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3 opacity-40 pointer-events-none transition-all">
-                            <p class="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                                <span class="w-5 h-5 rounded-full bg-amber-400 text-white flex items-center justify-center text-[11px] font-black shrink-0">2</span>
-                                だ液が一番よく働く温度は？（湯せんの温度を選ぼう）
-                            </p>
-                            <p class="text-xs text-slate-500 leading-relaxed">だ液の中の消化酵素は、体温に近い温度で最もよく働くよ。</p>
-                            <div class="grid grid-cols-3 gap-2" id="design-q2-choices">
-                                <button onclick="selectDesignQ(2,'10')" id="design-q2-10" class="design-choice text-center p-3 rounded-xl border-2 border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50 transition-all text-xs font-bold text-slate-700">🧊<br>10℃<br><span class="text-[10px] font-normal text-slate-400">冷たい水</span></button>
-                                <button onclick="selectDesignQ(2,'40')" id="design-q2-40" class="design-choice text-center p-3 rounded-xl border-2 border-slate-200 bg-white hover:border-red-300 hover:bg-red-50 transition-all text-xs font-bold text-slate-700">🌡️<br>40℃<br><span class="text-[10px] font-normal text-slate-400">体温付近</span></button>
-                                <button onclick="selectDesignQ(2,'100')" id="design-q2-100" class="design-choice text-center p-3 rounded-xl border-2 border-slate-200 bg-white hover:border-orange-300 hover:bg-orange-50 transition-all text-xs font-bold text-slate-700">🔥<br>100℃<br><span class="text-[10px] font-normal text-slate-400">熱湯</span></button>
+                        <div id="design-q2-block" class="bg-slate-50 rounded-xl p-4 border space-y-2 opacity-40 pointer-events-none">
+                            <p class="text-xs font-black">② 湯せんの温度は？</p>
+                            <div id="design-q2-choices" class="grid grid-cols-3 gap-2">
+                                <button onclick="selectDesignQ(2,'10')" id="design-q2-10" class="design-choice p-3 rounded-xl border-2 border-slate-200 bg-white text-xs font-bold text-center transition-all">🧊 10℃</button>
+                                <button onclick="selectDesignQ(2,'40')" id="design-q2-40" class="design-choice p-3 rounded-xl border-2 border-slate-200 bg-white text-xs font-bold text-center transition-all">🌡️ 40℃</button>
+                                <button onclick="selectDesignQ(2,'100')" id="design-q2-100" class="design-choice p-3 rounded-xl border-2 border-slate-200 bg-white text-xs font-bold text-center transition-all">🔥 100℃</button>
                             </div>
-                            <p id="design-q2-feedback" class="hidden text-xs font-bold mt-1 p-2 rounded-lg"></p>
+                            <p id="design-q2-feedback" class="hidden text-xs font-bold p-2 rounded-lg"></p>
                         </div>
-                        <div id="design-q3-block" class="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3 opacity-40 pointer-events-none transition-all">
-                            <p class="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                                <span class="w-5 h-5 rounded-full bg-amber-400 text-white flex items-center justify-center text-[11px] font-black shrink-0">3</span>
-                                「デンプンが消えた」と「糖ができた」を両方確認するには？
-                            </p>
-                            <p class="text-xs text-slate-500 leading-relaxed">試験管を2本ずつに分けて、それぞれ別の試薬で調べよう。</p>
-                            <div class="grid grid-cols-1 gap-2" id="design-q3-choices">
-                                <button onclick="selectDesignQ(3,'A')" id="design-q3-A" class="design-choice text-left p-3 rounded-xl border-2 border-slate-200 bg-white hover:border-purple-300 hover:bg-purple-50 transition-all text-xs font-bold text-slate-700">ア：ヨウ素液だけ使う</button>
-                                <button onclick="selectDesignQ(3,'B')" id="design-q3-B" class="design-choice text-left p-3 rounded-xl border-2 border-slate-200 bg-white hover:border-purple-300 hover:bg-purple-50 transition-all text-xs font-bold text-slate-700">イ：ヨウ素液 と ベネジクト液（＋加熱）の両方を使う</button>
-                                <button onclick="selectDesignQ(3,'C')" id="design-q3-C" class="design-choice text-left p-3 rounded-xl border-2 border-slate-200 bg-white hover:border-purple-300 hover:bg-purple-50 transition-all text-xs font-bold text-slate-700">ウ：ベネジクト液だけ使う（加熱なし）</button>
+                        <div id="design-q3-block" class="bg-slate-50 rounded-xl p-4 border space-y-2 opacity-40 pointer-events-none">
+                            <p class="text-xs font-black">③ 検出試薬は？</p>
+                            <div id="design-q3-choices" class="space-y-2">
+                                <button onclick="selectDesignQ(3,'A')" id="design-q3-A" class="design-choice w-full text-left p-3 rounded-xl border-2 border-slate-200 bg-white text-xs font-bold transition-all">ア：ヨウ素液だけ</button>
+                                <button onclick="selectDesignQ(3,'B')" id="design-q3-B" class="design-choice w-full text-left p-3 rounded-xl border-2 border-slate-200 bg-white text-xs font-bold transition-all">イ：ヨウ素液＋ベネジクト液（加熱）両方</button>
+                                <button onclick="selectDesignQ(3,'C')" id="design-q3-C" class="design-choice w-full text-left p-3 rounded-xl border-2 border-slate-200 bg-white text-xs font-bold transition-all">ウ：ベネジクト液だけ（加熱なし）</button>
                             </div>
-                            <p id="design-q3-feedback" class="hidden text-xs font-bold mt-1 p-2 rounded-lg"></p>
+                            <p id="design-q3-feedback" class="hidden text-xs font-bold p-2 rounded-lg"></p>
                         </div>
                     </div>
                     <div id="design-result-panel" class="hidden mt-5 space-y-3">
                         <div id="design-result-box" class="rounded-xl p-4 border-2 space-y-2"></div>
-                        <a href="#anchor-digestion-sim"
-                            class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm text-sm">
-                            <i class="fa-solid fa-flask"></i> 実験シミュレーターで確かめよう！
-                        </a>
+                        <a href="#anchor-digestion-sim" class="block w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl flex items-center justify-center gap-2 text-sm"><i class="fa-solid fa-flask"></i> 実験シミュレーターで確かめよう！</a>
                     </div>
                 </div>
             </div>
-
-            <!-- ===== 参考動画（シミュレーター前に残す） ===== -->
             <div id="anchor-digestion-video" class="scroll-mt-28"></div>
 
             <!-- 実験4 シミュレーター -->
@@ -957,7 +921,7 @@
                                         <span class="text-[10px] text-blue-600 font-normal">（デンプン ＋ だ液）</span>
                                     </td>
                                     <td class="p-2.5">
-                                        <select id="user-table-A" onchange="handleSelectChange(this, 'user-custom-A'); scheduleWsSave()" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none">
+                                        <select id="user-table-A" onchange="handleSelectChange(this, 'user-custom-A'); wsAutoSave()" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none">
                                             <option value="">-- 選択してください --</option>
                                             <option value="青紫色に変化した">青紫色に変化した</option>
                                             <option value="変化しなかった（うすい黄色のまま）">変化しなかった（うすい黄色のまま）</option>
@@ -965,10 +929,10 @@
                                             <option value="変化しなかった（水色のまま）">変化しなかった（水色のまま）</option>
                                             <option value="custom">✍️ 自分で入力する...</option>
                                         </select>
-                                        <input type="text" id="user-custom-A" placeholder="ここに自由に結果を入力..." class="hidden mt-1.5 w-full p-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-emerald-50/50">
+                                        <input type="text" id="user-custom-A" placeholder="ここに自由に結果を入力..." class="hidden mt-1.5 w-full p-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-emerald-50/50" oninput="wsAutoSave()">
                                     </td>
                                     <td class="p-2.5">
-                                        <select id="user-table-C" onchange="handleSelectChange(this, 'user-custom-C'); scheduleWsSave()" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none">
+                                        <select id="user-table-C" onchange="handleSelectChange(this, 'user-custom-C'); wsAutoSave()" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none">
                                             <option value="">-- 選択してください --</option>
                                             <option value="青紫色に変化した">青紫色に変化した</option>
                                             <option value="変化しなかった（うすい黄色のまま）">変化しなかった（うすい黄色のまま）</option>
@@ -976,7 +940,7 @@
                                             <option value="変化しなかった（水色のまま）">変化しなかった（水色のまま）</option>
                                             <option value="custom">✍️ 自分で入力する...</option>
                                         </select>
-                                        <input type="text" id="user-custom-C" placeholder="ここに自由に結果を入力..." class="hidden mt-1.5 w-full p-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-emerald-50/50">
+                                        <input type="text" id="user-custom-C" placeholder="ここに自由に結果を入力..." class="hidden mt-1.5 w-full p-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-emerald-50/50" oninput="wsAutoSave()">
                                     </td>
                                 </tr>
                                 <tr>
@@ -985,7 +949,7 @@
                                         <span class="text-[10px] text-purple-600 font-normal">（デンプン ＋ 水）</span>
                                     </td>
                                     <td class="p-2.5">
-                                        <select id="user-table-B" onchange="handleSelectChange(this, 'user-custom-B'); scheduleWsSave()" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none">
+                                        <select id="user-table-B" onchange="handleSelectChange(this, 'user-custom-B'); wsAutoSave()" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none">
                                             <option value="">-- 選択してください --</option>
                                             <option value="青紫色に変化した">青紫色に変化した</option>
                                             <option value="変化しなかった（うすい黄色のまま）">変化しなかった（うすい黄色のまま）</option>
@@ -993,10 +957,10 @@
                                             <option value="変化しなかった（水色のまま）">変化しなかった（水色のまま）</option>
                                             <option value="custom">✍️ 自分で入力する...</option>
                                         </select>
-                                        <input type="text" id="user-custom-B" placeholder="ここに自由に結果を入力..." class="hidden mt-1.5 w-full p-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-emerald-50/50">
+                                        <input type="text" id="user-custom-B" placeholder="ここに自由に結果を入力..." class="hidden mt-1.5 w-full p-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-emerald-50/50" oninput="wsAutoSave()">
                                     </td>
                                     <td class="p-2.5">
-                                        <select id="user-table-D" onchange="handleSelectChange(this, 'user-custom-D'); scheduleWsSave()" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none">
+                                        <select id="user-table-D" onchange="handleSelectChange(this, 'user-custom-D'); wsAutoSave()" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none">
                                             <option value="">-- 選択してください --</option>
                                             <option value="青紫色に変化した">青紫色に変化した</option>
                                             <option value="変化しなかった（うすい黄色のまま）">変化しなかった（うすい黄色のまま）</option>
@@ -1004,7 +968,7 @@
                                             <option value="変化しなかった（水色のまま）">変化しなかった（水色のまま）</option>
                                             <option value="custom">✍️ 自分で入力する...</option>
                                         </select>
-                                        <input type="text" id="user-custom-D" placeholder="ここに自由に結果を入力..." class="hidden mt-1.5 w-full p-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-emerald-50/50">
+                                        <input type="text" id="user-custom-D" placeholder="ここに自由に結果を入力..." class="hidden mt-1.5 w-full p-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-emerald-50/50" oninput="wsAutoSave()">
                                     </td>
                                 </tr>
                             </tbody>
@@ -1015,18 +979,18 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label class="block text-xs font-bold text-slate-700 mb-1">📋 実験結果を書こう（何が起きたか、事実だけ）</label>
-                        <textarea id="user-note-result" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all placeholder-slate-400" placeholder="例：だ液を入れた試験管A・CはヨウsoI液を入れても色が変わらなかった。水を入れたB・Dは青紫色になった。" oninput="scheduleWsSave()"></textarea>
+                        <textarea id="user-note-result" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all placeholder-slate-400" placeholder="例：だ液を入れた試験管A・CはヨウsoI液を入れても色が変わらなかった。水を入れたB・Dは青紫色になった。" oninput="wsAutoSave()"></textarea>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-700 mb-1">💭 気づいたこと・疑問に思ったこと（自由に）</label>
-                        <textarea id="user-note-conclusion" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all placeholder-slate-400" placeholder="実験を見て・やってみて、気になったこと・不思議に思ったことを自由に書こう。" oninput="scheduleWsSave()"></textarea>
+                        <textarea id="user-note-conclusion" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all placeholder-slate-400" placeholder="実験を見て・やってみて、気になったこと・不思議に思ったことを自由に書こう。" oninput="wsAutoSave()"></textarea>
                     </div>
                 </div>
                 <!-- 考察の問い -->
                 <div class="bg-emerald-50 rounded-xl p-4 border border-emerald-200 space-y-2">
                     <label class="block text-xs font-black text-emerald-900 flex items-center gap-1.5"><i class="fa-solid fa-lightbulb text-emerald-500"></i> 考えてみよう</label>
                     <p class="text-xs text-slate-700 font-bold">だ液を入れた試験管と水を入れた試験管、結果が違ったのはなぜ？実験結果をもとに自分の言葉で説明しよう。</p>
-                    <textarea id="user-note-digestion-think" rows="3" class="w-full text-sm p-3 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="自分の考えを書いてみよう。正解じゃなくてOK！" oninput="scheduleWsSave()"></textarea>
+                    <textarea id="user-note-digestion-think" rows="3" class="w-full text-sm p-3 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="自分の考えを書いてみよう。正解じゃなくてOK！" oninput="wsAutoSave()"></textarea>
                 </div>
 
                 <!-- ノートのコントロール -->
@@ -1300,13 +1264,13 @@
                         </a>
                     </div>
                 </div>
-                <textarea id="user-note-absorption" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder-slate-400" placeholder="図解や動画を見て気づいたこと、疑問に思ったことを自由に書こう。" oninput="scheduleWsSave()">
+                <textarea id="user-note-absorption" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder-slate-400" placeholder="図解や動画を見て気づいたこと、疑問に思ったことを自由に書こう。" oninput="wsAutoSave()">
                 </textarea>
                 <!-- 考察の問い -->
                 <div class="bg-blue-50 rounded-xl p-4 border border-blue-200 space-y-2 mt-2">
                     <label class="block text-xs font-black text-blue-900 flex items-center gap-1.5"><i class="fa-solid fa-lightbulb text-blue-500"></i> 考えてみよう</label>
                     <p class="text-xs text-slate-700 font-bold">ブドウ糖・アミノ酸は毛細血管へ、脂肪酸・モノグリセリドはリンパ管へ入る。この2つのルートに分かれるのはなぜだと思う？違いに注目して自分の考えを書こう。</p>
-                    <textarea id="user-note-absorption-think" rows="3" class="w-full text-sm p-3 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="自分の考えを書いてみよう。正解じゃなくてOK！" oninput="scheduleWsSave()"></textarea>
+                    <textarea id="user-note-absorption-think" rows="3" class="w-full text-sm p-3 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="自分の考えを書いてみよう。正解じゃなくてOK！" oninput="wsAutoSave()"></textarea>
                 </div>
                 <!-- 班で共有 -->
                 <div class="bg-blue-50 rounded-xl p-4 border-2 border-blue-300 space-y-3 mt-2">
@@ -1317,16 +1281,16 @@
                     <p class="text-xs text-slate-600">自分の「考えてみよう」の答えを班で見せ合って、話し合ってみよう。</p>
                     <div class="space-y-2">
                         <label class="block text-xs font-bold text-slate-700">💬 班でいちばん納得できた「2つのルートに分かれる理由」はどんな説明だった？</label>
-                        <textarea id="user-note-absorption-share" rows="3" class="w-full text-sm p-3 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="班で出た意見や、話し合って気づいたことを書こう。" oninput="scheduleWsSave()"></textarea>
+                        <textarea id="user-note-absorption-share" rows="3" class="w-full text-sm p-3 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="班で出た意見や、話し合って気づいたことを書こう。" oninput="wsAutoSave()"></textarea>
                     </div>
                     <div class="space-y-2">
                         <label class="block text-xs font-bold text-slate-700">🔄 話し合って、自分の考えは変わった？</label>
                         <div class="flex gap-2 flex-wrap">
-                            <label class="flex items-center gap-1.5 text-xs font-bold cursor-pointer"><input type="radio" name="user-note-absorption-changed" value="変わった" class="accent-blue-500" onchange="scheduleWsSave()"> 変わった</label>
-                            <label class="flex items-center gap-1.5 text-xs font-bold cursor-pointer"><input type="radio" name="user-note-absorption-changed" value="少し変わった" class="accent-blue-500" onchange="scheduleWsSave()"> 少し変わった</label>
-                            <label class="flex items-center gap-1.5 text-xs font-bold cursor-pointer"><input type="radio" name="user-note-absorption-changed" value="変わらなかった" class="accent-blue-500" onchange="scheduleWsSave()"> 変わらなかった</label>
+                            <label class="flex items-center gap-1.5 text-xs font-bold cursor-pointer"><input type="radio" name="user-note-absorption-changed" value="変わった" class="accent-blue-500" onchange="wsAutoSave()"> 変わった</label>
+                            <label class="flex items-center gap-1.5 text-xs font-bold cursor-pointer"><input type="radio" name="user-note-absorption-changed" value="少し変わった" class="accent-blue-500" onchange="wsAutoSave()"> 少し変わった</label>
+                            <label class="flex items-center gap-1.5 text-xs font-bold cursor-pointer"><input type="radio" name="user-note-absorption-changed" value="変わらなかった" class="accent-blue-500" onchange="wsAutoSave()"> 変わらなかった</label>
                         </div>
-                        <textarea id="user-note-absorption-changed-reason" rows="2" class="w-full text-sm p-3 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="どんなところが変わった（または変わらなかった）？" oninput="scheduleWsSave()"></textarea>
+                        <textarea id="user-note-absorption-changed-reason" rows="2" class="w-full text-sm p-3 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="どんなところが変わった（または変わらなかった）？" oninput="wsAutoSave()"></textarea>
                     </div>
                 </div>
                 <div style="display:none"</textarea>
@@ -1392,16 +1356,16 @@
                         <i class="fa-solid fa-scissors text-purple-500"></i> ペットボトル横隔膜モデルを作ろう！
                     </h3>
                 </div>
-                <p class="text-xs text-slate-500 leading-relaxed">ペットボトル・風船・ストローで、肺が膨らむしくみを再現してみよう。</p>
+                <p class="text-xs text-slate-500 leading-relaxed">ペットボトル・風船・ふつうのストローだけで、肺が膨らむしくみを再現してみよう。Y字ストロー不要！</p>
 
                 <!-- 材料 -->
                 <div class="bg-purple-50 rounded-xl p-4 border border-purple-100">
                     <h4 class="text-xs font-black text-purple-900 mb-2 flex items-center gap-1.5"><i class="fa-solid fa-box-open text-purple-500"></i> 必要なもの</h4>
                     <ul class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-700">
                         <li class="flex items-center gap-1.5"><i class="fa-solid fa-circle text-purple-300 text-[8px]"></i> ペットボトル（500mL）×1本</li>
-                        <li class="flex items-center gap-1.5"><i class="fa-solid fa-circle text-purple-300 text-[8px]"></i> 小さい風船×2個</li>
-                        <li class="flex items-center gap-1.5"><i class="fa-solid fa-circle text-purple-300 text-[8px]"></i> 大きい風船（またはゴム手袋）×1</li>
-                        <li class="flex items-center gap-1.5"><i class="fa-solid fa-circle text-purple-300 text-[8px]"></i> Y字ストロー×1</li>
+                        <li class="flex items-center gap-1.5"><i class="fa-solid fa-circle text-purple-300 text-[8px]"></i> 小さい風船×1個（肺）</li>
+                        <li class="flex items-center gap-1.5"><i class="fa-solid fa-circle text-purple-300 text-[8px]"></i> 大きい風船（またはゴム手袋）×1（横隔膜）</li>
+                        <li class="flex items-center gap-1.5"><i class="fa-solid fa-circle text-purple-300 text-[8px]"></i> ふつうのストロー×1本</li>
                         <li class="flex items-center gap-1.5"><i class="fa-solid fa-circle text-purple-300 text-[8px]"></i> はさみ・カッター</li>
                         <li class="flex items-center gap-1.5"><i class="fa-solid fa-circle text-purple-300 text-[8px]"></i> ビニールテープ</li>
                     </ul>
@@ -1416,11 +1380,11 @@
                     </div>
                     <div class="flex gap-3">
                         <div class="w-6 h-6 rounded-full bg-purple-500 text-white flex items-center justify-center font-black text-xs shrink-0 mt-0.5">2</div>
-                        <div class="flex-1 text-xs text-slate-700 leading-relaxed pt-0.5"><strong class="text-purple-800">肺（風船）をつける：</strong>小さい風船2個をY字ストローの先にかぶせ、テープで固定する。</div>
+                        <div class="flex-1 text-xs text-slate-700 leading-relaxed pt-0.5"><strong class="text-purple-800">肺（風船）をストローにつける：</strong>小さい風船の口をストローの先にかぶせ、テープでしっかり固定する。</div>
                     </div>
                     <div class="flex gap-3">
                         <div class="w-6 h-6 rounded-full bg-purple-500 text-white flex items-center justify-center font-black text-xs shrink-0 mt-0.5">3</div>
-                        <div class="flex-1 text-xs text-slate-700 leading-relaxed pt-0.5"><strong class="text-purple-800">ボトルにセットする：</strong>ストローをペットボトルの口から通し、隙間をテープで密閉。風船2個がボトル内にぶら下がる形にする。</div>
+                        <div class="flex-1 text-xs text-slate-700 leading-relaxed pt-0.5"><strong class="text-purple-800">ボトルにセットする：</strong>ストローをペットボトルの口から差し込み、ストローと口の隙間をテープで完全に密閉する。風船がボトル内にぶら下がる形にする。</div>
                     </div>
                     <div class="flex gap-3">
                         <div class="w-6 h-6 rounded-full bg-purple-500 text-white flex items-center justify-center font-black text-xs shrink-0 mt-0.5">4</div>
@@ -1429,6 +1393,10 @@
                     <div class="flex gap-3">
                         <div class="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-black text-xs shrink-0 mt-0.5"><i class="fa-solid fa-play text-[9px]"></i></div>
                         <div class="flex-1 bg-emerald-50 rounded-lg p-2 border border-emerald-200 text-xs text-slate-700 leading-relaxed"><strong class="text-emerald-800">試してみよう：</strong>底の風船を<strong>下に引っ張る</strong>→中の風船（肺）が膨らむ！　<strong>上に押す</strong>→しぼむ！</div>
+                    </div>
+                    <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
+                        <p class="font-black mb-1">💡 ポイント</p>
+                        <p>密閉が大事！ストローとペットボトルの口の隙間がわずかでもあると空気が漏れて風船が膨らまないよ。テープをしっかり巻こう。</p>
                     </div>
                 </div>
 
@@ -1440,7 +1408,7 @@
                     <p class="text-xs text-slate-500">横隔膜を引っ張ったときに何が起きた？なぜ風船が膨らむのか、自分の言葉で書いてみよう。</p>
                     <textarea id="user-note-bottle-model" rows="4"
                         class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all placeholder-slate-400"
-                        placeholder="底の風船（横隔膜）を引っ張ったとき、中の風船はどうなった？これは実際の体のどの動きと同じ？自分の言葉で説明しよう。"></textarea>
+                        placeholder="底の風船（横隔膜）を引っ張ったとき、中の風船はどうなった？これは実際の体のどの動きと同じ？自分の言葉で説明しよう。" oninput="wsAutoSave()"></textarea>
                     <div class="flex justify-end">
                         <button onclick="saveUserNotes('bottle-model')" class="text-xs bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2 rounded-lg shadow-sm transition-all">メモを一時保存する</button>
                     </div>
@@ -1588,12 +1556,12 @@
                         </a>
                     </div>
                 </div>
-                <div id="anchor-resp-note" class="scroll-mt-28"></div><textarea id="user-note-respiration" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all placeholder-slate-400" placeholder="シミュレーターや工作をやってみて気づいたこと、疑問に思ったことを自由に書こう。" oninput="scheduleWsSave()"></textarea>
+                <div id="anchor-resp-note" class="scroll-mt-28"></div><textarea id="user-note-respiration" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all placeholder-slate-400" placeholder="シミュレーターや工作をやってみて気づいたこと、疑問に思ったことを自由に書こう。" oninput="wsAutoSave()"></textarea>
                 <!-- 考察の問い -->
                 <div class="bg-purple-50 rounded-xl p-4 border border-purple-200 space-y-2 mt-2">
                     <label class="block text-xs font-black text-purple-900 flex items-center gap-1.5"><i class="fa-solid fa-lightbulb text-purple-500"></i> 考えてみよう</label>
                     <p class="text-xs text-slate-700 font-bold">運動すると息が荒くなるのはなぜ？安静時と運動後を比べながら、今日学んだ言葉（横隔膜・気圧など）を使って説明しよう。</p>
-                    <textarea id="user-note-respiration-think" rows="3" class="w-full text-sm p-3 border border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="自分の考えを書いてみよう。正解じゃなくてOK！" oninput="scheduleWsSave()"></textarea>
+                    <textarea id="user-note-respiration-think" rows="3" class="w-full text-sm p-3 border border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="自分の考えを書いてみよう。正解じゃなくてOK！" oninput="wsAutoSave()"></textarea>
                 </div>
                 
                 <div class="flex justify-between items-center flex-wrap gap-2">
@@ -1931,13 +1899,13 @@
                 </div>
                 <!-- 参考動画 -->
                 <div id="anchor-circ-note" class="scroll-mt-28"></div>
-                <textarea id="user-note-circulation" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all placeholder-slate-400" placeholder="図解やシミュレーターを見て気づいたこと、疑問に思ったことを自由に書こう。" oninput="scheduleWsSave()">
+                <textarea id="user-note-circulation" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all placeholder-slate-400" placeholder="図解やシミュレーターを見て気づいたこと、疑問に思ったことを自由に書こう。" oninput="wsAutoSave()">
                 </textarea>
                 <!-- 考察の問い -->
                 <div class="bg-red-50 rounded-xl p-4 border border-red-200 space-y-2 mt-2">
                     <label class="block text-xs font-black text-red-900 flex items-center gap-1.5"><i class="fa-solid fa-lightbulb text-red-500"></i> 考えてみよう</label>
                     <p class="text-xs text-slate-700 font-bold">体循環と肺循環、どちらが「からだを動かすため」に重要だと思う？その理由を、血液が運んでいるものと結びつけて書こう。</p>
-                    <textarea id="user-note-circulation-think" rows="3" class="w-full text-sm p-3 border border-red-200 rounded-xl focus:ring-2 focus:ring-red-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="自分の考えを書いてみよう。正解じゃなくてOK！" oninput="scheduleWsSave()"></textarea>
+                    <textarea id="user-note-circulation-think" rows="3" class="w-full text-sm p-3 border border-red-200 rounded-xl focus:ring-2 focus:ring-red-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="自分の考えを書いてみよう。正解じゃなくてOK！" oninput="wsAutoSave()"></textarea>
                 </div>
                 <div style="display:none"</textarea>
                 
@@ -2113,13 +2081,13 @@
                         </a>
                     </div>
                 </div>
-                <div id="anchor-excr-note" class="scroll-mt-28"></div><textarea id="user-note-excretion" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all placeholder-slate-400" placeholder="図解を見て気づいたこと、疑問に思ったことを自由に書こう。" oninput="scheduleWsSave()">
+                <div id="anchor-excr-note" class="scroll-mt-28"></div><textarea id="user-note-excretion" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all placeholder-slate-400" placeholder="図解を見て気づいたこと、疑問に思ったことを自由に書こう。" oninput="wsAutoSave()">
                 </textarea>
                 <!-- 考察の問い -->
                 <div class="bg-emerald-50 rounded-xl p-4 border border-emerald-200 space-y-2 mt-2">
                     <label class="block text-xs font-black text-emerald-900 flex items-center gap-1.5"><i class="fa-solid fa-lightbulb text-emerald-500"></i> 考えてみよう</label>
                     <p class="text-xs text-slate-700 font-bold">アンモニアをそのまま体の外に出せばいいのに、なぜわざわざ肝臓で尿素に変えてから出すのだろう？アンモニアと尿素の違いに注目して考えよう。</p>
-                    <textarea id="user-note-excretion-think" rows="3" class="w-full text-sm p-3 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="自分の考えを書いてみよう。正解じゃなくてOK！" oninput="scheduleWsSave()"></textarea>
+                    <textarea id="user-note-excretion-think" rows="3" class="w-full text-sm p-3 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="自分の考えを書いてみよう。正解じゃなくてOK！" oninput="wsAutoSave()"></textarea>
                 </div>
                 <!-- 班で共有 -->
                 <div class="bg-teal-50 rounded-xl p-4 border-2 border-teal-300 space-y-3 mt-2">
@@ -2130,16 +2098,16 @@
                     <p class="text-xs text-slate-600">自分の「考えてみよう」の答えを班で見せ合って、話し合ってみよう。</p>
                     <div class="space-y-2">
                         <label class="block text-xs font-bold text-slate-700">💬 班でいちばん説得力があった「尿素に変えてから出す理由」はどんな説明だった？</label>
-                        <textarea id="user-note-excretion-share" rows="3" class="w-full text-sm p-3 border border-teal-200 rounded-xl focus:ring-2 focus:ring-teal-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="班で出た意見や、話し合って気づいたことを書こう。" oninput="scheduleWsSave()"></textarea>
+                        <textarea id="user-note-excretion-share" rows="3" class="w-full text-sm p-3 border border-teal-200 rounded-xl focus:ring-2 focus:ring-teal-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="班で出た意見や、話し合って気づいたことを書こう。" oninput="wsAutoSave()"></textarea>
                     </div>
                     <div class="space-y-2">
                         <label class="block text-xs font-bold text-slate-700">🔄 話し合って、自分の考えは変わった？</label>
                         <div class="flex gap-2 flex-wrap">
-                            <label class="flex items-center gap-1.5 text-xs font-bold cursor-pointer"><input type="radio" name="user-note-excretion-changed" value="変わった" class="accent-teal-500" onchange="scheduleWsSave()"> 変わった</label>
-                            <label class="flex items-center gap-1.5 text-xs font-bold cursor-pointer"><input type="radio" name="user-note-excretion-changed" value="少し変わった" class="accent-teal-500" onchange="scheduleWsSave()"> 少し変わった</label>
-                            <label class="flex items-center gap-1.5 text-xs font-bold cursor-pointer"><input type="radio" name="user-note-excretion-changed" value="変わらなかった" class="accent-teal-500" onchange="scheduleWsSave()"> 変わらなかった</label>
+                            <label class="flex items-center gap-1.5 text-xs font-bold cursor-pointer"><input type="radio" name="user-note-excretion-changed" value="変わった" class="accent-teal-500" onchange="wsAutoSave()"> 変わった</label>
+                            <label class="flex items-center gap-1.5 text-xs font-bold cursor-pointer"><input type="radio" name="user-note-excretion-changed" value="少し変わった" class="accent-teal-500" onchange="wsAutoSave()"> 少し変わった</label>
+                            <label class="flex items-center gap-1.5 text-xs font-bold cursor-pointer"><input type="radio" name="user-note-excretion-changed" value="変わらなかった" class="accent-teal-500" onchange="wsAutoSave()"> 変わらなかった</label>
                         </div>
-                        <textarea id="user-note-excretion-changed-reason" rows="2" class="w-full text-sm p-3 border border-teal-200 rounded-xl focus:ring-2 focus:ring-teal-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="どんなところが変わった（または変わらなかった）？" oninput="scheduleWsSave()"></textarea>
+                        <textarea id="user-note-excretion-changed-reason" rows="2" class="w-full text-sm p-3 border border-teal-200 rounded-xl focus:ring-2 focus:ring-teal-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="どんなところが変わった（または変わらなかった）？" oninput="wsAutoSave()"></textarea>
                     </div>
                 </div>
                 <div style="display:none"</textarea>
@@ -2420,13 +2388,13 @@
                     </div>
                 </div>
 
-                <div id="anchor-stim-note" class="scroll-mt-28"></div><textarea id="user-note-stimulus" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-violet-500 outline-none transition-all placeholder-slate-400" placeholder="感覚器官の図解を見て気づいたこと、疑問に思ったことを自由に書こう。" oninput="scheduleWsSave()">
+                <div id="anchor-stim-note" class="scroll-mt-28"></div><textarea id="user-note-stimulus" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-violet-500 outline-none transition-all placeholder-slate-400" placeholder="感覚器官の図解を見て気づいたこと、疑問に思ったことを自由に書こう。" oninput="wsAutoSave()">
                 </textarea>
                 <!-- 考察の問い -->
                 <div class="bg-violet-50 rounded-xl p-4 border border-violet-200 space-y-2 mt-2">
                     <label class="block text-xs font-black text-violet-900 flex items-center gap-1.5"><i class="fa-solid fa-lightbulb text-violet-500"></i> 考えてみよう</label>
                     <p class="text-xs text-slate-700 font-bold">ライオンの目は前向き、シマウマの目は横向きについている。この違いはなぜ？それぞれの動物の「生きるための戦略」と結びつけて考えよう。</p>
-                    <textarea id="user-note-stimulus-think" rows="3" class="w-full text-sm p-3 border border-violet-200 rounded-xl focus:ring-2 focus:ring-violet-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="自分の考えを書いてみよう。正解じゃなくてOK！" oninput="scheduleWsSave()"></textarea>
+                    <textarea id="user-note-stimulus-think" rows="3" class="w-full text-sm p-3 border border-violet-200 rounded-xl focus:ring-2 focus:ring-violet-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="自分の考えを書いてみよう。正解じゃなくてOK！" oninput="wsAutoSave()"></textarea>
                 </div>
                 <div style="display:none"</textarea>
                 <div class="flex justify-between items-center flex-wrap gap-2">
@@ -2582,13 +2550,13 @@
             <!-- メモ欄 -->
             <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
                 <div class="flex items-center justify-between flex-wrap gap-2">
-                <div id="anchor-nerve-note" class="scroll-mt-28"></div><textarea id="user-note-nerve" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-violet-500 outline-none transition-all placeholder-slate-400" placeholder="神経系の図や反応経路を見て気づいたこと、疑問に思ったことを自由に書こう。" oninput="scheduleWsSave()">
+                <div id="anchor-nerve-note" class="scroll-mt-28"></div><textarea id="user-note-nerve" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-violet-500 outline-none transition-all placeholder-slate-400" placeholder="神経系の図や反応経路を見て気づいたこと、疑問に思ったことを自由に書こう。" oninput="wsAutoSave()">
                 </textarea>
                 <!-- 考察の問い -->
                 <div class="bg-violet-50 rounded-xl p-4 border border-violet-200 space-y-2 mt-2">
                     <label class="block text-xs font-black text-violet-900 flex items-center gap-1.5"><i class="fa-solid fa-lightbulb text-violet-500"></i> 考えてみよう</label>
                     <p class="text-xs text-slate-700 font-bold">反射と意識的な反応、どちらが速い？脳を経由するかしないかに注目して、反射が「生きていくうえで都合がよい」理由を説明しよう。</p>
-                    <textarea id="user-note-nerve-think" rows="3" class="w-full text-sm p-3 border border-violet-200 rounded-xl focus:ring-2 focus:ring-violet-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="自分の考えを書いてみよう。正解じゃなくてOK！" oninput="scheduleWsSave()"></textarea>
+                    <textarea id="user-note-nerve-think" rows="3" class="w-full text-sm p-3 border border-violet-200 rounded-xl focus:ring-2 focus:ring-violet-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="自分の考えを書いてみよう。正解じゃなくてOK！" oninput="wsAutoSave()"></textarea>
                 </div>
                 <div style="display:none"</textarea>
                 <div class="flex justify-between items-center flex-wrap gap-2">
@@ -2744,13 +2712,13 @@
                     </div>
                 </div>
 
-                <div id="anchor-muscle-note" class="scroll-mt-28"></div><textarea id="user-note-muscle" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-violet-500 outline-none transition-all placeholder-slate-400" placeholder="骨・筋肉の図解を見て気づいたこと、疑問に思ったことを自由に書こう。" oninput="scheduleWsSave()">
+                <div id="anchor-muscle-note" class="scroll-mt-28"></div><textarea id="user-note-muscle" rows="4" class="w-full text-sm p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-violet-500 outline-none transition-all placeholder-slate-400" placeholder="骨・筋肉の図解を見て気づいたこと、疑問に思ったことを自由に書こう。" oninput="wsAutoSave()">
                 </textarea>
                 <!-- 考察の問い -->
                 <div class="bg-violet-50 rounded-xl p-4 border border-violet-200 space-y-2 mt-2">
                     <label class="block text-xs font-black text-violet-900 flex items-center gap-1.5"><i class="fa-solid fa-lightbulb text-violet-500"></i> 考えてみよう</label>
                     <p class="text-xs text-slate-700 font-bold">筋肉は縮むことしかできないのに、なぜ腕を曲げることも伸ばすこともできる？2つの筋肉の動きを比べながら説明しよう。</p>
-                    <textarea id="user-note-muscle-think" rows="3" class="w-full text-sm p-3 border border-violet-200 rounded-xl focus:ring-2 focus:ring-violet-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="自分の考えを書いてみよう。正解じゃなくてOK！" oninput="scheduleWsSave()"></textarea>
+                    <textarea id="user-note-muscle-think" rows="3" class="w-full text-sm p-3 border border-violet-200 rounded-xl focus:ring-2 focus:ring-violet-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="自分の考えを書いてみよう。正解じゃなくてOK！" oninput="wsAutoSave()"></textarea>
                 </div>
                 <div style="display:none"</textarea>
                 <div class="flex justify-between items-center flex-wrap gap-2">
@@ -2837,227 +2805,6 @@
 
     <!-- ==================== JavaScriptコード ==================== -->
     <script>
-        // ==================== 名前・管理（全てDOM依存のためbody後に定義） ====================
-        let adminClickCount = 0, adminClickTimer = null;
-
-        function closeDetailModal() {
-            document.getElementById('student-detail-modal').classList.add('hidden');
-            document.getElementById('student-detail-modal').classList.remove('flex');
-        }
-
-        const WS_LABELS = {
-            user_table_A: '試験管A ヨウ素液', user_table_B: '試験管B ヨウ素液',
-            user_table_C: '試験管C ベネジクト', user_table_D: '試験管D ベネジクト',
-            user_note_result: '実験結果', user_note_conclusion: '気づき・疑問',
-            user_note_digestion_think: '消化：考えてみよう',
-            user_note_absorption: '吸収：メモ', user_note_absorption_think: '吸収：考えてみよう',
-            user_note_absorption_share: '吸収：班の意見', user_note_absorption_changed: '考えが変わった？',
-            user_note_absorption_changed_reason: '変化の理由（吸収）',
-            user_note_bottle_model: 'ペットボトルモデル：メモ',
-            user_note_respiration: '呼吸：メモ', user_note_respiration_think: '呼吸：考えてみよう',
-            user_note_circulation: '循環：メモ', user_note_circulation_think: '循環：考えてみよう',
-            user_note_excretion: '排出：メモ', user_note_excretion_think: '排出：考えてみよう',
-            user_note_excretion_share: '排出：班の意見', user_note_excretion_changed: '考えが変わった？',
-            user_note_excretion_changed_reason: '変化の理由（排出）',
-            user_note_stimulus: '刺激：メモ', user_note_stimulus_think: '刺激：考えてみよう',
-            user_note_nerve: '神経：メモ', user_note_nerve_think: '神経：考えてみよう',
-            user_note_muscle: '筋肉・骨：メモ', user_note_muscle_think: '筋肉・骨：考えてみよう',
-            user_custom_A: '試験管A カスタム', user_custom_B: '試験管B カスタム',
-            user_custom_C: '試験管C カスタム', user_custom_D: '試験管D カスタム',
-        };
-
-        function loadDashboard() {
-            var container = document.getElementById('dashboard-list');
-            container.innerHTML = '<p class="text-slate-400 text-xs text-center py-6"><i class="fa-solid fa-spinner fa-spin"></i> 読み込み中…</p>';
-            db.ref('worksheets').once('value', function(snap) {
-                container.innerHTML = '';
-                if (!snap.exists()) {
-                    container.innerHTML = '<p class="text-slate-400 text-xs text-center py-6">まだ誰も入力していません</p>';
-                    return;
-                }
-                snap.forEach(function(child) {
-                    var studentKey = child.key;
-                    var studentName = studentKey.replace(/_/g, ' ');
-                    var data = child.val() || {};
-                    var filled = Object.values(data).filter(function(v){ return v && String(v).trim(); }).length;
-                    var total = Object.keys(WS_LABELS).length;
-                    var card = document.createElement('div');
-                    card.className = 'bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-emerald-50 hover:border-emerald-300 transition-all';
-                    card.onclick = (function(n,k,d){ return function(){ openStudentDetail(n,k,d); }; })(studentName, studentKey, data);
-                    card.innerHTML = '<div class="flex items-center gap-2.5"><span class="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-sm shrink-0">' + studentName.charAt(0) + '</span><div><p class="text-sm font-bold text-slate-800">' + studentName + '</p><p class="text-[10px] text-slate-400">' + filled + ' / ' + total + ' 項目入力済み</p></div></div><div class="flex items-center gap-2"><div class="w-20 h-2 bg-slate-200 rounded-full overflow-hidden"><div class="h-full bg-emerald-400 rounded-full" style="width:' + Math.round(filled/total*100) + '%"></div></div><i class="fa-solid fa-chevron-right text-slate-400 text-xs"></i></div>';
-                    container.appendChild(card);
-                });
-            });
-        }
-
-        function openStudentDetail(name, key, data) {
-            document.getElementById('detail-modal-title').textContent = '👤 ' + name + ' の回答';
-            var body = document.getElementById('detail-modal-body');
-            body.innerHTML = '';
-            var sections = [
-                { label: '📋 消化・実験4', keys: ['user_table_A','user_table_B','user_table_C','user_table_D','user_note_result','user_note_conclusion','user_note_digestion_think'] },
-                { label: '💧 吸収と柔毛', keys: ['user_note_absorption','user_note_absorption_think','user_note_absorption_share','user_note_absorption_changed','user_note_absorption_changed_reason'] },
-                { label: '🌬️ 呼吸', keys: ['user_note_bottle_model','user_note_respiration','user_note_respiration_think'] },
-                { label: '❤️ 循環', keys: ['user_note_circulation','user_note_circulation_think'] },
-                { label: '🔬 排出', keys: ['user_note_excretion','user_note_excretion_think','user_note_excretion_share','user_note_excretion_changed','user_note_excretion_changed_reason'] },
-                { label: '👁️ 刺激・感覚', keys: ['user_note_stimulus','user_note_stimulus_think'] },
-                { label: '🧠 神経', keys: ['user_note_nerve','user_note_nerve_think'] },
-                { label: '🦴 筋肉・骨', keys: ['user_note_muscle','user_note_muscle_think'] },
-            ];
-            sections.forEach(function(sec) {
-                var hasContent = sec.keys.some(function(k){ return data[k] && String(data[k]).trim(); });
-                var secEl = document.createElement('div');
-                secEl.className = 'space-y-2';
-                var html = '<p class="text-xs font-black text-slate-600">' + sec.label + (hasContent ? '' : ' <span class="text-[10px] text-slate-300 font-normal">（未入力）</span>') + '</p>';
-                if (hasContent) {
-                    sec.keys.forEach(function(k) {
-                        var val = data[k];
-                        if (!val || !String(val).trim()) return;
-                        html += '<div class="bg-white rounded-lg border border-slate-200 p-2.5"><p class="text-[10px] font-bold text-slate-400 mb-1">' + (WS_LABELS[k]||k) + '</p><p class="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">' + String(val).replace(/</g,'&lt;') + '</p></div>';
-                    });
-                }
-                secEl.innerHTML = html;
-                body.appendChild(secEl);
-            });
-            document.getElementById('student-detail-modal').classList.remove('hidden');
-            document.getElementById('student-detail-modal').classList.add('flex');
-        }
-
-        function openAdminModal() {
-            document.getElementById('admin-modal').classList.remove('hidden');
-            document.getElementById('admin-modal').classList.add('flex');
-            switchAdminTab('names');
-            loadAdminNameList();
-        }
-
-        function closeAdminModal() {
-            document.getElementById('admin-modal').classList.add('hidden');
-            document.getElementById('admin-modal').classList.remove('flex');
-        }
-
-        function switchAdminTab(tab) {
-            ['names','dashboard'].forEach(function(p) {
-                document.getElementById('admin-panel-' + p).classList.toggle('hidden', p !== tab);
-                var btn = document.getElementById('admin-tab-' + p);
-                if (p === tab) {
-                    btn.classList.add('text-emerald-700','border-emerald-500');
-                    btn.classList.remove('text-slate-500','border-transparent');
-                } else {
-                    btn.classList.remove('text-emerald-700','border-emerald-500');
-                    btn.classList.add('text-slate-500','border-transparent');
-                }
-            });
-            if (tab === 'dashboard') loadDashboard();
-        }
-
-        function loadAdminNameList() {
-            db.ref('thoughts/students').once('value', function(snap) {
-                var list = document.getElementById('admin-name-list');
-                list.innerHTML = '';
-                if (!snap.exists()) {
-                    list.innerHTML = '<p class="text-slate-400 text-xs text-center py-3">まだ登録されていません</p>';
-                    return;
-                }
-                snap.forEach(function(child) {
-                    var key = child.key;
-                    var name = child.val();
-                    var row = document.createElement('div');
-                    row.className = 'flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2';
-                    row.innerHTML = '<span class="text-sm font-medium text-slate-700">👤 ' + name + '</span>'
-                        + '<button onclick="adminDeleteName('' + key + '')" class="text-[10px] text-red-500 hover:text-red-700 font-bold px-2 py-1 rounded hover:bg-red-50 transition-all">削除</button>';
-                    list.appendChild(row);
-                });
-            });
-        }
-
-        function adminAddName() {
-            var input = document.getElementById('admin-new-name');
-            var name = input.value.trim();
-            if (!name) { alert('名前を入力してください'); return; }
-            db.ref('thoughts/students').push(name).then(function() {
-                input.value = '';
-                loadAdminNameList();
-            });
-        }
-
-        function adminDeleteName(key) {
-            if (!confirm('この生徒名を削除しますか？')) return;
-            db.ref('thoughts/students/' + key).remove().then(function() {
-                loadAdminNameList();
-            });
-        }
-
-        function handleAdminClick() {
-            adminClickCount++;
-            if (adminClickTimer) clearTimeout(adminClickTimer);
-            if (adminClickCount >= 5) {
-                adminClickCount = 0;
-                openAdminModal();
-            } else {
-                adminClickTimer = setTimeout(function() { adminClickCount = 0; }, 2000);
-            }
-        }
-
-        function openNameModal() {
-            document.getElementById('name-modal').classList.remove('hidden');
-            document.getElementById('name-modal').classList.add('flex');
-            loadNameList();
-        }
-
-        function closeNameModal() {
-            document.getElementById('name-modal').classList.add('hidden');
-            document.getElementById('name-modal').classList.remove('flex');
-        }
-
-        function loadNameList() {
-            const prevName = localStorage.getItem('student_name') || '';
-            const hint = document.getElementById('name-modal-hint');
-            if (hint) hint.textContent = prevName ? '前回：' + prevName : '';
-            const directInput = document.getElementById('name-direct-input');
-            if (directInput && prevName) directInput.value = prevName;
-
-            db.ref('thoughts/students').once('value', function(snap) {
-                const list = document.getElementById('name-list');
-                const listSection = document.getElementById('name-list-section');
-                if (!list) return;
-                list.innerHTML = '';
-                if (!snap.exists()) {
-                    if (listSection) listSection.classList.add('hidden');
-                    return;
-                }
-                if (listSection) listSection.classList.remove('hidden');
-                snap.forEach(function(child) {
-                    const name = child.val();
-                    const btn = document.createElement('button');
-                    btn.className = 'py-2.5 px-2 rounded-xl text-sm font-bold border-2 transition-all border-slate-200 bg-slate-50 hover:border-emerald-400 hover:bg-emerald-50 text-slate-700 active:scale-95';
-                    btn.innerHTML = '👤 ' + name;
-                    btn.onclick = function() { selectName(name); };
-                    list.appendChild(btn);
-                });
-            });
-        }
-
-        function confirmDirectName() {
-            const input = document.getElementById('name-direct-input');
-            if (!input) return;
-            const name = input.value.trim();
-            if (!name) {
-                input.classList.add('border-red-400');
-                input.placeholder = '名前を入力してください';
-                setTimeout(function() { input.classList.remove('border-red-400'); input.placeholder = '例：山田太郎'; }, 1500);
-                return;
-            }
-            selectName(name);
-        }
-
-        function selectName(name) {
-            localStorage.setItem('student_name', name);
-            const display = document.getElementById('header-name-display');
-            if (display) display.textContent = name;
-            closeNameModal();
-            loadWorksheet(name);
-        }
-
         // ------------------ ノート動画URL管理 ------------------
         function handleVideo(tabId) {
             const url = document.getElementById(`video-${tabId}`).value.trim();
@@ -3273,193 +3020,7 @@
             }
         }
 
-        // ==================== ワークシート Firebase 保存・読み込み ====================
-        const WS_TEXT_IDS = [
-            'user-note-result', 'user-note-conclusion', 'user-note-digestion-think',
-            'user-note-absorption', 'user-note-absorption-think', 'user-note-absorption-share',
-            'user-note-absorption-changed-reason',
-            'user-note-bottle-model', 'user-note-respiration', 'user-note-respiration-think',
-            'user-note-circulation', 'user-note-circulation-think',
-            'user-note-excretion', 'user-note-excretion-think', 'user-note-excretion-share',
-            'user-note-excretion-changed-reason',
-            'user-note-stimulus', 'user-note-stimulus-think',
-            'user-note-nerve', 'user-note-nerve-think',
-            'user-note-muscle', 'user-note-muscle-think',
-            'user-custom-A', 'user-custom-B', 'user-custom-C', 'user-custom-D',
-        ];
-        const WS_SELECT_IDS = ['user-table-A', 'user-table-B', 'user-table-C', 'user-table-D'];
-        const WS_RADIO_NAMES = ['user-note-absorption-changed', 'user-note-excretion-changed'];
-        let wsSaveTimer = null;
-
-        function scheduleWsSave() {
-            if (wsSaveTimer) clearTimeout(wsSaveTimer);
-            wsSaveTimer = setTimeout(flushWsSave, 800);
-        }
-
-        function flushWsSave() {
-            const name = localStorage.getItem('student_name');
-            if (!name || name === '名無し') return;
-            const data = {};
-            WS_TEXT_IDS.forEach(id => { const el = document.getElementById(id); if (el) data[id.replace(/-/g, '_')] = el.value; });
-            WS_SELECT_IDS.forEach(id => { const el = document.getElementById(id); if (el) data[id.replace(/-/g, '_')] = el.value; });
-            WS_RADIO_NAMES.forEach(rname => {
-                const checked = document.querySelector('input[name="' + rname + '"]:checked');
-                data[rname.replace(/-/g, '_')] = checked ? checked.value : '';
-            });
-            db.ref('worksheets/' + name.replace(/\s/g, '_')).set(data);
-            const ind = document.getElementById('ws-saved-indicator');
-            if (ind) {
-                ind.classList.remove('opacity-0'); ind.classList.add('opacity-100');
-                setTimeout(() => { ind.classList.remove('opacity-100'); ind.classList.add('opacity-0'); }, 2000);
-            }
-        }
-
-        function clearAllFields() {
-            // 名前切り替え時に全フィールドをリセット
-            WS_TEXT_IDS.forEach(id => {
-                const el = document.getElementById(id);
-                if (el) {
-                    el.value = '';
-                    if (id.startsWith('user-custom-')) el.classList.add('hidden');
-                }
-            });
-            WS_SELECT_IDS.forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.value = '';
-            });
-            WS_RADIO_NAMES.forEach(rname => {
-                document.querySelectorAll('input[name="' + rname + '"]').forEach(r => r.checked = false);
-            });
-        }
-
-        function loadWorksheet(name) {
-            if (!name) return;
-            // まず全フィールドをクリア（前の人のデータが残らないように）
-            clearAllFields();
-            db.ref('worksheets/' + name.replace(/\s/g, '_')).once('value', function(snap) {
-                const data = snap.exists() ? snap.val() : {};
-                WS_TEXT_IDS.forEach(id => {
-                    const key = id.replace(/-/g, '_');
-                    const el = document.getElementById(id);
-                    if (el) {
-                        el.value = data[key] || '';
-                        if (id.startsWith('user-custom-') && data[key]) el.classList.remove('hidden');
-                    }
-                });
-                WS_SELECT_IDS.forEach(id => {
-                    const key = id.replace(/-/g, '_');
-                    const el = document.getElementById(id);
-                    if (el) el.value = data[key] || '';
-                });
-                WS_RADIO_NAMES.forEach(rname => {
-                    const key = rname.replace(/-/g, '_');
-                    if (data[key]) {
-                        const radio = document.querySelector('input[name="' + rname + '"][value="' + data[key] + '"]');
-                        if (radio) radio.checked = true;
-                    }
-                });
-            });
-        }
-
-        function saveUserNotes(sectionId) { flushWsSave(); }
-
-        // ==================== 探究型導入ロジック ====================
-        function goIntroScreen(n) {
-            [1,2,3].forEach(i => { const el = document.getElementById('intro-screen-'+i); if(el) el.classList.add('hidden'); });
-            const target = document.getElementById('intro-screen-'+n);
-            if(target){ target.classList.remove('hidden'); target.scrollIntoView({behavior:'smooth',block:'start'}); }
-            document.getElementById('intro-progress-label').textContent = 'STEP '+n+' / 3';
-            [1,2,3].forEach(i => {
-                const bar = document.getElementById('intro-prog-'+i);
-                if(bar){ bar.classList.toggle('bg-amber-400', i<=n); bar.classList.toggle('bg-slate-200', i>n); }
-            });
-        }
-
-        function selectOpeningChoice(choice) {
-            ['A','B'].forEach(c => {
-                const btn = document.getElementById('opening-'+c);
-                if(!btn) return;
-                btn.classList.remove('border-amber-400','bg-amber-100','border-slate-200','bg-slate-50');
-                if(c===choice){ btn.classList.add('border-amber-400','bg-amber-100'); }
-                else { btn.classList.add('border-slate-200','bg-slate-50','opacity-50'); }
-                btn.disabled = true;
-            });
-            document.getElementById('opening-feedback').classList.remove('hidden');
-            document.getElementById('opening-feedback-A').classList.toggle('hidden', choice!=='A');
-            document.getElementById('opening-feedback-B').classList.toggle('hidden', choice!=='B');
-        }
-
-        const reagentAnswers = {1:'A', 2:'B', 3:'B'};
-        const reagentDone = {1:false, 2:false, 3:false};
-
-        function checkReagentQ(qid, val) {
-            if(reagentDone[qid]) return;
-            const isCorrect = val === reagentAnswers[qid];
-            const block = document.getElementById('reagent-q'+qid);
-            block.querySelectorAll('.reagent-choice').forEach(btn => {
-                btn.disabled = true;
-                const btnVal = btn.getAttribute('data-val');
-                if(btnVal===reagentAnswers[qid]){ btn.classList.add('border-emerald-400','bg-emerald-50','text-emerald-800'); }
-                else if(btnVal===val && !isCorrect){ btn.classList.add('border-red-400','bg-red-50','text-red-700'); }
-            });
-            const fb = document.getElementById('reagent-q'+qid+'-feedback');
-            fb.classList.remove('hidden');
-            if(isCorrect){
-                fb.className='text-xs font-bold mt-1 text-emerald-700'; fb.textContent='✅ 正解！';
-                reagentDone[qid]=true;
-                if(qid<3){ const nb=document.getElementById('reagent-q'+(qid+1)); if(nb) nb.classList.remove('opacity-40','pointer-events-none'); }
-                if(reagentDone[1]&&reagentDone[2]&&reagentDone[3]){
-                    const btn=document.getElementById('btn-goto-screen3');
-                    btn.disabled=false;
-                    btn.classList.remove('bg-slate-300','text-slate-500','cursor-not-allowed');
-                    btn.classList.add('bg-amber-500','hover:bg-amber-600','text-white');
-                    btn.innerHTML='<i class="fa-solid fa-unlock text-sm"></i> 次へ：実験を設計しよう！';
-                }
-            } else {
-                fb.className='text-xs font-bold mt-1 text-red-600'; fb.textContent='❌ もう一度考えてみよう！';
-                setTimeout(()=>{ block.querySelectorAll('.reagent-choice').forEach(b=>{ b.disabled=false; b.classList.remove('border-emerald-400','bg-emerald-50','text-emerald-800','border-red-400','bg-red-50','text-red-700'); }); fb.classList.add('hidden'); },1200);
-            }
-        }
-
-        const designAnswers = {1:'A', 2:'40', 3:'B'};
-        const designDone = {1:false, 2:false, 3:false};
-        const designMsgs = {
-            1:{correct:'✅ 正解！「だ液の有無」だけを変えて他の条件は同じ。これが対照実験のポイント！', wrong_B:'❌ 惜しい！デンプンがないと、そもそも消化が起きても確認できないよ。', wrong_C:'❌ 惜しい！「だ液の効果」を調べるには、だ液の有無だけを変えた対照実験が必要だよ。'},
-            2:{correct:'✅ 正解！体温に近い約40℃でアミラーゼが最もよく働くよ。', wrong_10:'❌ 惜しい！酵素は低温では働きにくいんだ。体温付近が最適だよ。', wrong_100:'❌ 惜しい！高温すぎると酵素が壊れてしまう（変性）。体温付近がベストだよ！'},
-            3:{correct:'✅ 正解！ヨウ素液でデンプンが消えたか、ベネジクト液で糖ができたか、両方確認できる！', wrong_A:'❌ 惜しい！ヨウ素液だけだと「デンプンが消えた」しか確認できない。糖ができたことも証明しよう。', wrong_C:'❌ 惜しい！ベネジクト液だけだと「デンプンが消えた」ことを確認できないし、加熱なしでは反応しないよ。'}
-        };
-
-        function selectDesignQ(qid, val) {
-            if(designDone[qid]) return;
-            const isCorrect = val===designAnswers[qid];
-            const cb = document.getElementById('design-q'+qid+'-choices');
-            if(cb){ cb.querySelectorAll('.design-choice').forEach(btn=>{ btn.disabled=true; const bv=btn.id.split('-').pop(); if(bv===designAnswers[qid]){btn.classList.add('border-emerald-400','bg-emerald-50');} else if(bv===val&&!isCorrect){btn.classList.add('border-red-400','bg-red-50');} }); }
-            const fb=document.getElementById('design-q'+qid+'-feedback');
-            fb.classList.remove('hidden');
-            if(isCorrect){
-                fb.className='text-xs font-bold mt-1 p-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200';
-                fb.textContent=designMsgs[qid].correct;
-                designDone[qid]=true;
-                const nb=document.getElementById('design-q'+(qid+1)+'-block');
-                if(nb) setTimeout(()=>{ nb.classList.remove('opacity-40','pointer-events-none'); nb.scrollIntoView({behavior:'smooth',block:'nearest'}); },600);
-                if(designDone[1]&&designDone[2]&&designDone[3]) setTimeout(showDesignResult,700);
-            } else {
-                fb.className='text-xs font-bold mt-1 p-2 rounded-lg bg-red-50 text-red-600 border border-red-200';
-                fb.textContent=designMsgs[qid]['wrong_'+val]||'❌ もう一度考えてみよう！';
-                setTimeout(()=>{ if(cb) cb.querySelectorAll('.design-choice').forEach(b=>{ b.disabled=false; b.classList.remove('border-emerald-400','bg-emerald-50','border-red-400','bg-red-50'); }); fb.classList.add('hidden'); },1800);
-            }
-        }
-
-        function showDesignResult() {
-            const panel=document.getElementById('design-result-panel');
-            const box=document.getElementById('design-result-box');
-            panel.classList.remove('hidden');
-            box.className='rounded-xl p-4 border-2 border-emerald-400 bg-emerald-50 space-y-2';
-            box.innerHTML='<p class="font-black text-emerald-800 text-sm flex items-center gap-2"><i class="fa-solid fa-certificate text-emerald-500 text-lg"></i>🎉 実験設計　完成！</p><div class="text-xs text-slate-700 space-y-1.5 leading-relaxed"><p>✅ <strong>対照実験：</strong>試験管A（デンプン＋だ液）vs 試験管B（デンプン＋水）</p><p>✅ <strong>温度条件：</strong>約40℃（体温付近）の湯せん</p><p>✅ <strong>検出試薬：</strong>ヨウ素液（デンプン確認）＋ベネジクト液・加熱（糖確認）</p></div><p class="text-xs text-emerald-700 font-bold mt-1">シミュレーターで、この実験を実際に動かしてみよう！</p>';
-            panel.scrollIntoView({behavior:'smooth',block:'nearest'});
-        }
-
-        // ==================== 📝 実験・調べメモの記録とリセット制御 ====================
+        // ------------------ 📝 実験・調べメモの記録とリセット制御 ------------------
         let currentClearTarget = '';
 
         function handleSelectChange(selectEl, customInputId) {
@@ -3477,7 +3038,14 @@
             area.classList.toggle("hidden");
         }
 
-        // saveUserNotes は上部で定義済み
+        function saveUserNotes(sectionId) {
+            wsSave();
+            const statusIndicator = document.getElementById('save-status-'+sectionId);
+            if (statusIndicator) {
+                statusIndicator.style.opacity = "1";
+                setTimeout(function() { statusIndicator.style.opacity = "0"; }, 2500);
+            }
+        }
 
         function openClearModal(target) {
             currentClearTarget = target;
@@ -3851,6 +3419,197 @@
             }
         }
 
+        // ==================== 探究型導入ロジック ====================
+        function goIntroScreen(n) {
+            [1,2,3].forEach(function(i){
+                var el = document.getElementById('intro-screen-'+i);
+                if (el) el.classList.toggle('hidden', i!==n);
+            });
+            document.getElementById('intro-progress-label').textContent = 'STEP '+n+' / 3';
+            [1,2,3].forEach(function(i){
+                var b = document.getElementById('intro-prog-'+i);
+                if (b) { b.classList.toggle('bg-amber-400', i<=n); b.classList.toggle('bg-slate-200', i>n); }
+            });
+            var t = document.getElementById('intro-screen-'+n);
+            if (t) t.scrollIntoView({behavior:'smooth', block:'start'});
+        }
+
+        function selectOpeningChoice(choice) {
+            ['A','B'].forEach(function(c){
+                var btn = document.getElementById('opening-'+c);
+                if (!btn) return;
+                btn.disabled = true;
+                if (c===choice) btn.classList.add('border-amber-400','bg-amber-100');
+                else btn.classList.add('opacity-50');
+            });
+            document.getElementById('opening-feedback').classList.remove('hidden');
+            document.getElementById('opening-feedback-A').classList.toggle('hidden', choice!=='A');
+            document.getElementById('opening-feedback-B').classList.toggle('hidden', choice!=='B');
+        }
+
+        var reagentAnswers = {1:'A', 2:'B', 3:'B'};
+        var reagentDone = {1:false, 2:false, 3:false};
+        function checkReagentQ(qid, val) {
+            if (reagentDone[qid]) return;
+            var correct = val === reagentAnswers[qid];
+            var block = document.getElementById('reagent-q'+qid);
+            block.querySelectorAll('.reagent-choice').forEach(function(btn){
+                btn.disabled = true;
+                var v = btn.getAttribute('data-val');
+                if (v===reagentAnswers[qid]) btn.classList.add('border-emerald-400','bg-emerald-50');
+                else if (v===val && !correct) btn.classList.add('border-red-400','bg-red-50');
+            });
+            var fb = document.getElementById('reagent-q'+qid+'-feedback');
+            fb.classList.remove('hidden');
+            if (correct) {
+                fb.className='text-xs font-bold mt-1 text-emerald-700'; fb.textContent='✅ 正解！';
+                reagentDone[qid] = true;
+                if (qid<3) { var nb=document.getElementById('reagent-q'+(qid+1)); if(nb) nb.classList.remove('opacity-40','pointer-events-none'); }
+                if (reagentDone[1]&&reagentDone[2]&&reagentDone[3]) {
+                    var btn2=document.getElementById('btn-goto-screen3');
+                    btn2.disabled=false; btn2.classList.remove('bg-slate-300','text-slate-500','cursor-not-allowed');
+                    btn2.classList.add('bg-amber-500','text-white'); btn2.innerHTML='<i class="fa-solid fa-unlock"></i> 次へ：実験を設計しよう！';
+                }
+            } else {
+                fb.className='text-xs font-bold mt-1 text-red-600'; fb.textContent='❌ もう一度！';
+                setTimeout(function(){
+                    block.querySelectorAll('.reagent-choice').forEach(function(b){ b.disabled=false; b.classList.remove('border-emerald-400','bg-emerald-50','border-red-400','bg-red-50'); });
+                    fb.classList.add('hidden');
+                }, 1200);
+            }
+        }
+
+        var designAnswers = {1:'A', 2:'40', 3:'B'};
+        var designDone = {1:false, 2:false, 3:false};
+        var designMsgs = {
+            1:{correct:'✅ 正解！「だ液の有無」だけ変えた対照実験だね！', wrong_B:'❌ デンプンがないと確認できないよ。', wrong_C:'❌ だ液の有無だけを変えよう。'},
+            2:{correct:'✅ 正解！体温付近の40℃が最適だよ。', wrong_10:'❌ 低温では酵素が働きにくいよ。', wrong_100:'❌ 高温では酵素が壊れるよ。'},
+            3:{correct:'✅ 正解！両方の試薬で確認できる！', wrong_A:'❌ 糖ができたことも確認しよう。', wrong_C:'❌ デンプンが消えたことも確認しよう。'}
+        };
+        function selectDesignQ(qid, val) {
+            if (designDone[qid]) return;
+            var correct = val===designAnswers[qid];
+            var cb = document.getElementById('design-q'+qid+'-choices');
+            if (cb) cb.querySelectorAll('.design-choice').forEach(function(btn){
+                btn.disabled=true;
+                var bv=btn.id.split('-').pop();
+                if(bv===designAnswers[qid]) btn.classList.add('border-emerald-400','bg-emerald-50');
+                else if(bv===val&&!correct) btn.classList.add('border-red-400','bg-red-50');
+            });
+            var fb = document.getElementById('design-q'+qid+'-feedback');
+            fb.classList.remove('hidden');
+            if (correct) {
+                fb.className='text-xs font-bold p-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200';
+                fb.textContent = designMsgs[qid].correct;
+                designDone[qid] = true;
+                var nb = document.getElementById('design-q'+(qid+1)+'-block');
+                if (nb) setTimeout(function(){ nb.classList.remove('opacity-40','pointer-events-none'); nb.scrollIntoView({behavior:'smooth',block:'nearest'}); }, 600);
+                if (designDone[1]&&designDone[2]&&designDone[3]) setTimeout(showDesignResult, 700);
+            } else {
+                fb.className='text-xs font-bold p-2 rounded-lg bg-red-50 text-red-600 border border-red-200';
+                fb.textContent = designMsgs[qid]['wrong_'+val]||'❌ もう一度！';
+                setTimeout(function(){
+                    if(cb) cb.querySelectorAll('.design-choice').forEach(function(b){ b.disabled=false; b.classList.remove('border-emerald-400','bg-emerald-50','border-red-400','bg-red-50'); });
+                    fb.classList.add('hidden');
+                }, 1800);
+            }
+        }
+        function showDesignResult() {
+            var panel=document.getElementById('design-result-panel'); panel.classList.remove('hidden');
+            var box=document.getElementById('design-result-box');
+            box.className='rounded-xl p-4 border-2 border-emerald-400 bg-emerald-50 space-y-2';
+            box.innerHTML='<p class="font-black text-emerald-800 text-sm">🎉 実験設計　完成！</p><div class="text-xs space-y-1.5"><p>✅ <strong>対照実験：</strong>試験管A（デンプン＋だ液）vs 試験管B（デンプン＋水）</p><p>✅ <strong>温度：</strong>約40℃の湯せん</p><p>✅ <strong>試薬：</strong>ヨウ素液＋ベネジクト液（加熱）</p></div>';
+            panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+        }
+
+        // ==================== ワークシート Firebase 保存・読み込み ====================
+        var WS_FIELDS = [
+            'user-note-result','user-note-conclusion','user-note-digestion-think',
+            'user-note-absorption','user-note-absorption-think','user-note-absorption-share',
+            'user-note-absorption-changed-reason','user-note-bottle-model',
+            'user-note-respiration','user-note-respiration-think',
+            'user-note-circulation','user-note-circulation-think',
+            'user-note-excretion','user-note-excretion-think',
+            'user-note-excretion-share','user-note-excretion-changed-reason',
+            'user-note-stimulus','user-note-stimulus-think',
+            'user-note-nerve','user-note-nerve-think',
+            'user-note-muscle','user-note-muscle-think',
+            'user-custom-A','user-custom-B','user-custom-C','user-custom-D'
+        ];
+        var WS_SELECTS = ['user-table-A','user-table-B','user-table-C','user-table-D'];
+        var WS_RADIOS  = ['user-note-absorption-changed','user-note-excretion-changed'];
+
+        function wsKey(name) {
+            return 'worksheets/' + name.replace(/\s/g, '_');
+        }
+
+        function wsSave() {
+            var name = localStorage.getItem('student_name');
+            if (!name) return;
+            var data = {};
+            WS_FIELDS.forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) data[id.replace(/-/g,'_')] = el.value;
+            });
+            WS_SELECTS.forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) data[id.replace(/-/g,'_')] = el.value;
+            });
+            WS_RADIOS.forEach(function(rn) {
+                var c = document.querySelector('input[name="'+rn+'"]:checked');
+                data[rn.replace(/-/g,'_')] = c ? c.value : '';
+            });
+            db.ref(wsKey(name)).set(data);
+        }
+
+        var wsAutoSaveTimer = null;
+        function wsAutoSave() {
+            if (wsAutoSaveTimer) clearTimeout(wsAutoSaveTimer);
+            wsAutoSaveTimer = setTimeout(wsSave, 1000);
+        }
+
+        function wsClearFields() {
+            WS_FIELDS.forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) { el.value = ''; if (id.indexOf('user-custom-')===0) el.classList.add('hidden'); }
+            });
+            WS_SELECTS.forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            WS_RADIOS.forEach(function(rn) {
+                document.querySelectorAll('input[name="'+rn+'"]').forEach(function(r){ r.checked=false; });
+            });
+        }
+
+        function wsLoadForName(name) {
+            wsClearFields();
+            db.ref(wsKey(name)).once('value', function(snap) {
+                if (!snap.exists()) return;
+                var data = snap.val();
+                WS_FIELDS.forEach(function(id) {
+                    var k = id.replace(/-/g,'_');
+                    var el = document.getElementById(id);
+                    if (el && data[k]) {
+                        el.value = data[k];
+                        if (id.indexOf('user-custom-')===0) el.classList.remove('hidden');
+                    }
+                });
+                WS_SELECTS.forEach(function(id) {
+                    var k = id.replace(/-/g,'_');
+                    var el = document.getElementById(id);
+                    if (el && data[k]) el.value = data[k];
+                });
+                WS_RADIOS.forEach(function(rn) {
+                    var k = rn.replace(/-/g,'_');
+                    if (data[k]) {
+                        var r = document.querySelector('input[name="'+rn+'"][value="'+data[k]+'"]');
+                        if (r) r.checked = true;
+                    }
+                });
+            });
+        }
+
         // 初期ロード
         window.onload = function() {
             updateLabUI();
@@ -3859,8 +3618,6 @@
             renderQuestion2();
             switchTab('home');
             loadAllVideos();
-            // 名前モーダルを表示（body後なので安全）
-            openNameModal();
         }
     </script>
 </body>
