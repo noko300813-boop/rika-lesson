@@ -223,213 +223,9 @@
         }
 
         // ==================== 名前管理 ====================
-        let adminClickCount = 0, adminClickTimer = null;
+        // adminClickCount / openNameModal / closeNameModal / handleAdminClick はbody後scriptで定義
 
-        function handleAdminClick() {
-            adminClickCount++;
-            if (adminClickTimer) clearTimeout(adminClickTimer);
-            if (adminClickCount >= 5) {
-                adminClickCount = 0;
-                openAdminModal();
-            } else {
-                adminClickTimer = setTimeout(() => { adminClickCount = 0; }, 2000);
-            }
-        }
-
-        function openNameModal() {
-            document.getElementById('name-modal').classList.remove('hidden');
-            document.getElementById('name-modal').classList.add('flex');
-            loadNameList();
-        }
-
-        function closeNameModal() {
-            document.getElementById('name-modal').classList.add('hidden');
-            document.getElementById('name-modal').classList.remove('flex');
-        }
-
-        function openAdminModal() {
-            document.getElementById('admin-modal').classList.remove('hidden');
-            document.getElementById('admin-modal').classList.add('flex');
-            switchAdminTab('names');
-            loadAdminNameList();
-        }
-
-        function switchAdminTab(tab) {
-            const panels = ['names', 'dashboard'];
-            panels.forEach(p => {
-                document.getElementById('admin-panel-' + p).classList.toggle('hidden', p !== tab);
-                const btn = document.getElementById('admin-tab-' + p);
-                if (p === tab) {
-                    btn.classList.add('text-emerald-700', 'border-emerald-500');
-                    btn.classList.remove('text-slate-500', 'border-transparent');
-                } else {
-                    btn.classList.remove('text-emerald-700', 'border-emerald-500');
-                    btn.classList.add('text-slate-500', 'border-transparent');
-                }
-            });
-            if (tab === 'dashboard') loadDashboard();
-        }
-
-        function closeDetailModal() {
-            document.getElementById('student-detail-modal').classList.add('hidden');
-            document.getElementById('student-detail-modal').classList.remove('flex');
-        }
-
-        // ダッシュボードのラベルマップ
-        const WS_LABELS = {
-            user_table_A: '試験管A ヨウ素液', user_table_B: '試験管B ヨウ素液',
-            user_table_C: '試験管C ベネジクト', user_table_D: '試験管D ベネジクト',
-            user_note_result: '実験結果', user_note_conclusion: '気づき・疑問',
-            user_note_digestion_think: '消化：考えてみよう',
-            user_note_absorption: '吸収：メモ', user_note_absorption_think: '吸収：考えてみよう',
-            user_note_absorption_share: '吸収：班の意見', user_note_absorption_changed: '考えが変わった？',
-            user_note_absorption_changed_reason: '変化の理由（吸収）',
-            user_note_bottle_model: 'ペットボトルモデル：メモ',
-            user_note_respiration: '呼吸：メモ', user_note_respiration_think: '呼吸：考えてみよう',
-            user_note_circulation: '循環：メモ', user_note_circulation_think: '循環：考えてみよう',
-            user_note_excretion: '排出：メモ', user_note_excretion_think: '排出：考えてみよう',
-            user_note_excretion_share: '排出：班の意見', user_note_excretion_changed: '考えが変わった？',
-            user_note_excretion_changed_reason: '変化の理由（排出）',
-            user_note_stimulus: '刺激：メモ', user_note_stimulus_think: '刺激：考えてみよう',
-            user_note_nerve: '神経：メモ', user_note_nerve_think: '神経：考えてみよう',
-            user_note_muscle: '筋肉・骨：メモ', user_note_muscle_think: '筋肉・骨：考えてみよう',
-            user_custom_A: '試験管A カスタム入力', user_custom_B: '試験管B カスタム入力',
-            user_custom_C: '試験管C カスタム入力', user_custom_D: '試験管D カスタム入力',
-        };
-
-        function loadDashboard() {
-            const container = document.getElementById('dashboard-list');
-            container.innerHTML = '<p class="text-slate-400 text-xs text-center py-6"><i class="fa-solid fa-spinner fa-spin"></i> 読み込み中…</p>';
-
-            db.ref('worksheets').once('value', function(snap) {
-                container.innerHTML = '';
-                if (!snap.exists()) {
-                    container.innerHTML = '<p class="text-slate-400 text-xs text-center py-6">まだ誰も入力していません</p>';
-                    return;
-                }
-                snap.forEach(function(child) {
-                    const studentKey = child.key;
-                    const studentName = studentKey.replace(/_/g, ' ');
-                    const data = child.val() || {};
-
-                    // 入力済みフィールド数をカウント
-                    const filled = Object.values(data).filter(v => v && String(v).trim()).length;
-                    const total = Object.keys(WS_LABELS).length;
-
-                    const card = document.createElement('div');
-                    card.className = 'bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-emerald-50 hover:border-emerald-300 transition-all';
-                    card.onclick = function() { openStudentDetail(studentName, studentKey, data); };
-                    card.innerHTML = \`
-                        <div class="flex items-center gap-2.5">
-                            <span class="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-sm shrink-0">
-                                \${studentName.charAt(0)}
-                            </span>
-                            <div>
-                                <p class="text-sm font-bold text-slate-800">\${studentName}</p>
-                                <p class="text-[10px] text-slate-400">\${filled} / \${total} 項目入力済み</p>
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <div class="w-20 h-2 bg-slate-200 rounded-full overflow-hidden">
-                                <div class="h-full bg-emerald-400 rounded-full transition-all" style="width:\${Math.round(filled/total*100)}%"></div>
-                            </div>
-                            <i class="fa-solid fa-chevron-right text-slate-400 text-xs"></i>
-                        </div>
-                    \`;
-                    container.appendChild(card);
-                });
-            });
-        }
-
-        function openStudentDetail(name, key, data) {
-            document.getElementById('detail-modal-title').textContent = '👤 ' + name + ' の回答';
-            const body = document.getElementById('detail-modal-body');
-            body.innerHTML = '';
-
-            // セクションごとにグループ化して表示
-            const sections = [
-                { label: '📋 消化・実験4', keys: ['user_table_A','user_table_B','user_table_C','user_table_D','user_note_result','user_note_conclusion','user_note_digestion_think'] },
-                { label: '💧 吸収と柔毛', keys: ['user_note_absorption','user_note_absorption_think','user_note_absorption_share','user_note_absorption_changed','user_note_absorption_changed_reason'] },
-                { label: '🌬️ 呼吸', keys: ['user_note_bottle_model','user_note_respiration','user_note_respiration_think'] },
-                { label: '❤️ 循環', keys: ['user_note_circulation','user_note_circulation_think'] },
-                { label: '🔬 排出', keys: ['user_note_excretion','user_note_excretion_think','user_note_excretion_share','user_note_excretion_changed','user_note_excretion_changed_reason'] },
-                { label: '👁️ 刺激・感覚', keys: ['user_note_stimulus','user_note_stimulus_think'] },
-                { label: '🧠 神経', keys: ['user_note_nerve','user_note_nerve_think'] },
-                { label: '🦴 筋肉・骨', keys: ['user_note_muscle','user_note_muscle_think'] },
-            ];
-
-            sections.forEach(function(sec) {
-                const hasContent = sec.keys.some(k => data[k] && String(data[k]).trim());
-                const secEl = document.createElement('div');
-                secEl.className = 'space-y-2';
-                let html = \`<p class="text-xs font-black text-slate-600 flex items-center gap-1">\${sec.label} \${hasContent ? '' : '<span class=\"text-[10px] text-slate-300 font-normal\">（未入力）</span>'}</p>\`;
-                if (hasContent) {
-                    sec.keys.forEach(function(k) {
-                        const val = data[k];
-                        if (!val || !String(val).trim()) return;
-                        const label = WS_LABELS[k] || k;
-                        html += \`<div class="bg-white rounded-lg border border-slate-200 p-2.5">
-                            <p class="text-[10px] font-bold text-slate-400 mb-1">\${label}</p>
-                            <p class="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">\${String(val).replace(/</g,'&lt;')}</p>
-                        </div>\`;
-                    });
-                }
-                secEl.innerHTML = html;
-                body.appendChild(secEl);
-            });
-
-            document.getElementById('student-detail-modal').classList.remove('hidden');
-            document.getElementById('student-detail-modal').classList.add('flex');
-        }
-
-        function closeAdminModal() {
-            document.getElementById('admin-modal').classList.add('hidden');
-            document.getElementById('admin-modal').classList.remove('flex');
-        }
-
-        // loadNameList / confirmDirectName / selectName は body後scriptで定義
-
-        function loadAdminNameList() {
-            db.ref('thoughts/students').once('value', function(snap) {
-                const list = document.getElementById('admin-name-list');
-                list.innerHTML = '';
-                if (!snap.exists()) {
-                    list.innerHTML = '<p class="text-slate-400 text-xs text-center py-3">まだ登録されていません</p>';
-                    return;
-                }
-                snap.forEach(function(child) {
-                    const key = child.key;
-                    const name = child.val();
-                    const row = document.createElement('div');
-                    row.className = 'flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2';
-                    row.innerHTML = '<span class="text-sm font-medium text-slate-700">👤 ' + name + '</span>'
-                        + '<button onclick="adminDeleteName(\'' + key + '\')" class="text-[10px] text-red-500 hover:text-red-700 font-bold px-2 py-1 rounded hover:bg-red-50 transition-all">削除</button>';
-                    list.appendChild(row);
-                });
-            });
-        }
-
-        function adminAddName() {
-            const input = document.getElementById('admin-new-name');
-            const name = input.value.trim();
-            if (!name) { alert('名前を入力してください'); return; }
-            db.ref('thoughts/students').push(name).then(function() {
-                input.value = '';
-                loadAdminNameList();
-            });
-        }
-
-        function adminDeleteName(key) {
-            if (!confirm('この生徒名を削除しますか？')) return;
-            db.ref('thoughts/students/' + key).remove().then(function() {
-                loadAdminNameList();
-            });
-        }
-
-        // 起動時：必ず名前選択モーダルを表示する
-        window.addEventListener('DOMContentLoaded', function() {
-            openNameModal();
-        });
+        // openAdminModal / switchAdminTab はbody後scriptで定義
 
         window.addEventListener('load', setupSharing);
     </script>
@@ -3041,7 +2837,178 @@
 
     <!-- ==================== JavaScriptコード ==================== -->
     <script>
-        // ==================== 名前管理（DOM依存のためbody後に定義） ====================
+        // ==================== 名前・管理（全てDOM依存のためbody後に定義） ====================
+        let adminClickCount = 0, adminClickTimer = null;
+
+        function closeDetailModal() {
+            document.getElementById('student-detail-modal').classList.add('hidden');
+            document.getElementById('student-detail-modal').classList.remove('flex');
+        }
+
+        const WS_LABELS = {
+            user_table_A: '試験管A ヨウ素液', user_table_B: '試験管B ヨウ素液',
+            user_table_C: '試験管C ベネジクト', user_table_D: '試験管D ベネジクト',
+            user_note_result: '実験結果', user_note_conclusion: '気づき・疑問',
+            user_note_digestion_think: '消化：考えてみよう',
+            user_note_absorption: '吸収：メモ', user_note_absorption_think: '吸収：考えてみよう',
+            user_note_absorption_share: '吸収：班の意見', user_note_absorption_changed: '考えが変わった？',
+            user_note_absorption_changed_reason: '変化の理由（吸収）',
+            user_note_bottle_model: 'ペットボトルモデル：メモ',
+            user_note_respiration: '呼吸：メモ', user_note_respiration_think: '呼吸：考えてみよう',
+            user_note_circulation: '循環：メモ', user_note_circulation_think: '循環：考えてみよう',
+            user_note_excretion: '排出：メモ', user_note_excretion_think: '排出：考えてみよう',
+            user_note_excretion_share: '排出：班の意見', user_note_excretion_changed: '考えが変わった？',
+            user_note_excretion_changed_reason: '変化の理由（排出）',
+            user_note_stimulus: '刺激：メモ', user_note_stimulus_think: '刺激：考えてみよう',
+            user_note_nerve: '神経：メモ', user_note_nerve_think: '神経：考えてみよう',
+            user_note_muscle: '筋肉・骨：メモ', user_note_muscle_think: '筋肉・骨：考えてみよう',
+            user_custom_A: '試験管A カスタム', user_custom_B: '試験管B カスタム',
+            user_custom_C: '試験管C カスタム', user_custom_D: '試験管D カスタム',
+        };
+
+        function loadDashboard() {
+            var container = document.getElementById('dashboard-list');
+            container.innerHTML = '<p class="text-slate-400 text-xs text-center py-6"><i class="fa-solid fa-spinner fa-spin"></i> 読み込み中…</p>';
+            db.ref('worksheets').once('value', function(snap) {
+                container.innerHTML = '';
+                if (!snap.exists()) {
+                    container.innerHTML = '<p class="text-slate-400 text-xs text-center py-6">まだ誰も入力していません</p>';
+                    return;
+                }
+                snap.forEach(function(child) {
+                    var studentKey = child.key;
+                    var studentName = studentKey.replace(/_/g, ' ');
+                    var data = child.val() || {};
+                    var filled = Object.values(data).filter(function(v){ return v && String(v).trim(); }).length;
+                    var total = Object.keys(WS_LABELS).length;
+                    var card = document.createElement('div');
+                    card.className = 'bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:bg-emerald-50 hover:border-emerald-300 transition-all';
+                    card.onclick = (function(n,k,d){ return function(){ openStudentDetail(n,k,d); }; })(studentName, studentKey, data);
+                    card.innerHTML = '<div class="flex items-center gap-2.5"><span class="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-sm shrink-0">' + studentName.charAt(0) + '</span><div><p class="text-sm font-bold text-slate-800">' + studentName + '</p><p class="text-[10px] text-slate-400">' + filled + ' / ' + total + ' 項目入力済み</p></div></div><div class="flex items-center gap-2"><div class="w-20 h-2 bg-slate-200 rounded-full overflow-hidden"><div class="h-full bg-emerald-400 rounded-full" style="width:' + Math.round(filled/total*100) + '%"></div></div><i class="fa-solid fa-chevron-right text-slate-400 text-xs"></i></div>';
+                    container.appendChild(card);
+                });
+            });
+        }
+
+        function openStudentDetail(name, key, data) {
+            document.getElementById('detail-modal-title').textContent = '👤 ' + name + ' の回答';
+            var body = document.getElementById('detail-modal-body');
+            body.innerHTML = '';
+            var sections = [
+                { label: '📋 消化・実験4', keys: ['user_table_A','user_table_B','user_table_C','user_table_D','user_note_result','user_note_conclusion','user_note_digestion_think'] },
+                { label: '💧 吸収と柔毛', keys: ['user_note_absorption','user_note_absorption_think','user_note_absorption_share','user_note_absorption_changed','user_note_absorption_changed_reason'] },
+                { label: '🌬️ 呼吸', keys: ['user_note_bottle_model','user_note_respiration','user_note_respiration_think'] },
+                { label: '❤️ 循環', keys: ['user_note_circulation','user_note_circulation_think'] },
+                { label: '🔬 排出', keys: ['user_note_excretion','user_note_excretion_think','user_note_excretion_share','user_note_excretion_changed','user_note_excretion_changed_reason'] },
+                { label: '👁️ 刺激・感覚', keys: ['user_note_stimulus','user_note_stimulus_think'] },
+                { label: '🧠 神経', keys: ['user_note_nerve','user_note_nerve_think'] },
+                { label: '🦴 筋肉・骨', keys: ['user_note_muscle','user_note_muscle_think'] },
+            ];
+            sections.forEach(function(sec) {
+                var hasContent = sec.keys.some(function(k){ return data[k] && String(data[k]).trim(); });
+                var secEl = document.createElement('div');
+                secEl.className = 'space-y-2';
+                var html = '<p class="text-xs font-black text-slate-600">' + sec.label + (hasContent ? '' : ' <span class="text-[10px] text-slate-300 font-normal">（未入力）</span>') + '</p>';
+                if (hasContent) {
+                    sec.keys.forEach(function(k) {
+                        var val = data[k];
+                        if (!val || !String(val).trim()) return;
+                        html += '<div class="bg-white rounded-lg border border-slate-200 p-2.5"><p class="text-[10px] font-bold text-slate-400 mb-1">' + (WS_LABELS[k]||k) + '</p><p class="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">' + String(val).replace(/</g,'&lt;') + '</p></div>';
+                    });
+                }
+                secEl.innerHTML = html;
+                body.appendChild(secEl);
+            });
+            document.getElementById('student-detail-modal').classList.remove('hidden');
+            document.getElementById('student-detail-modal').classList.add('flex');
+        }
+
+        function openAdminModal() {
+            document.getElementById('admin-modal').classList.remove('hidden');
+            document.getElementById('admin-modal').classList.add('flex');
+            switchAdminTab('names');
+            loadAdminNameList();
+        }
+
+        function closeAdminModal() {
+            document.getElementById('admin-modal').classList.add('hidden');
+            document.getElementById('admin-modal').classList.remove('flex');
+        }
+
+        function switchAdminTab(tab) {
+            ['names','dashboard'].forEach(function(p) {
+                document.getElementById('admin-panel-' + p).classList.toggle('hidden', p !== tab);
+                var btn = document.getElementById('admin-tab-' + p);
+                if (p === tab) {
+                    btn.classList.add('text-emerald-700','border-emerald-500');
+                    btn.classList.remove('text-slate-500','border-transparent');
+                } else {
+                    btn.classList.remove('text-emerald-700','border-emerald-500');
+                    btn.classList.add('text-slate-500','border-transparent');
+                }
+            });
+            if (tab === 'dashboard') loadDashboard();
+        }
+
+        function loadAdminNameList() {
+            db.ref('thoughts/students').once('value', function(snap) {
+                var list = document.getElementById('admin-name-list');
+                list.innerHTML = '';
+                if (!snap.exists()) {
+                    list.innerHTML = '<p class="text-slate-400 text-xs text-center py-3">まだ登録されていません</p>';
+                    return;
+                }
+                snap.forEach(function(child) {
+                    var key = child.key;
+                    var name = child.val();
+                    var row = document.createElement('div');
+                    row.className = 'flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2';
+                    row.innerHTML = '<span class="text-sm font-medium text-slate-700">👤 ' + name + '</span>'
+                        + '<button onclick="adminDeleteName('' + key + '')" class="text-[10px] text-red-500 hover:text-red-700 font-bold px-2 py-1 rounded hover:bg-red-50 transition-all">削除</button>';
+                    list.appendChild(row);
+                });
+            });
+        }
+
+        function adminAddName() {
+            var input = document.getElementById('admin-new-name');
+            var name = input.value.trim();
+            if (!name) { alert('名前を入力してください'); return; }
+            db.ref('thoughts/students').push(name).then(function() {
+                input.value = '';
+                loadAdminNameList();
+            });
+        }
+
+        function adminDeleteName(key) {
+            if (!confirm('この生徒名を削除しますか？')) return;
+            db.ref('thoughts/students/' + key).remove().then(function() {
+                loadAdminNameList();
+            });
+        }
+
+        function handleAdminClick() {
+            adminClickCount++;
+            if (adminClickTimer) clearTimeout(adminClickTimer);
+            if (adminClickCount >= 5) {
+                adminClickCount = 0;
+                openAdminModal();
+            } else {
+                adminClickTimer = setTimeout(function() { adminClickCount = 0; }, 2000);
+            }
+        }
+
+        function openNameModal() {
+            document.getElementById('name-modal').classList.remove('hidden');
+            document.getElementById('name-modal').classList.add('flex');
+            loadNameList();
+        }
+
+        function closeNameModal() {
+            document.getElementById('name-modal').classList.add('hidden');
+            document.getElementById('name-modal').classList.remove('flex');
+        }
+
         function loadNameList() {
             const prevName = localStorage.getItem('student_name') || '';
             const hint = document.getElementById('name-modal-hint');
@@ -3892,11 +3859,8 @@
             renderQuestion2();
             switchTab('home');
             loadAllVideos();
-            const savedName = localStorage.getItem('student_name');
-            if (savedName) {
-                document.getElementById('header-name-display').textContent = savedName;
-                loadWorksheet(savedName);
-            }
+            // 名前モーダルを表示（body後なので安全）
+            openNameModal();
         }
     </script>
 </body>
