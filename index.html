@@ -327,20 +327,29 @@
                 });
                 return;
             }
-            db.ref('quizProgress/' + key + '/' + quizId).once('value', function(snap) {
-                const data = snap.val();
-                if (quizId === 'quiz2') {
-                    if (data && typeof data.index === 'number' && data.index < quiz2Data.length) {
-                        quiz2Index = data.index;
-                        quiz2Score = data.score || 0;
-                        document.getElementById('quiz2-playing').classList.remove('hidden');
-                        document.getElementById('quiz2-result').classList.add('hidden');
-                        renderQuestion2();
-                    } else {
-                        resetQuiz2();
-                    }
-                }
-            });
+            if (quizId === 'quiz2') {
+                // 第2章も単元ごとに複数のテストがあるので、途中のものがないか順番に確認する
+                let resumed2 = false;
+                QUIZ_SETS2.forEach(function(set) {
+                    db.ref('quizProgress/' + key + '/' + set.id).once('value', function(snap) {
+                        if (resumed2) return;
+                        const data = snap.val();
+                        if (data && typeof data.index === 'number' && data.index < set.data.length) {
+                            resumed2 = true;
+                            activeQuiz2Data = set.data;
+                            activeQuiz2Id = set.id;
+                            quiz2Index = data.index;
+                            quiz2Score = data.score || 0;
+                            document.getElementById('quiz2-current-label').innerText = set.label;
+                            document.getElementById('quiz2-select').classList.add('hidden');
+                            document.getElementById('quiz2-playing').classList.remove('hidden');
+                            document.getElementById('quiz2-result').classList.add('hidden');
+                            renderQuestion2();
+                        }
+                    });
+                });
+                return;
+            }
         }
 
         function loadAdminNameList() {
@@ -372,7 +381,7 @@
                             return;
                         }
                         const data = qsnap.val();
-                        const quizLabels = { quiz1: '総合', 'quiz-digestion': '消化', 'quiz-absorption': '吸収', 'quiz-respiration': '呼吸', 'quiz-circulation': '循環', 'quiz-excretion': '排出', quiz2: '第2章' };
+                        const quizLabels = { quiz1: '総合', 'quiz-digestion': '消化', 'quiz-absorption': '吸収', 'quiz-respiration': '呼吸', 'quiz-circulation': '循環', 'quiz-excretion': '排出', 'quiz2-stimulus': '刺激・感覚器官', 'quiz2-nerve': '神経', 'quiz2-muscle': '骨と筋肉' };
                         const parts = [];
                         Object.keys(quizLabels).forEach(function(qid) {
                             if (data[qid]) parts.push(quizLabels[qid] + ' ' + data[qid].score + '/' + data[qid].total);
@@ -425,7 +434,7 @@
                     // ログイン成功後にFirebaseを使う機能を初期化
                     setupSharing();
                     renderLeaderboardUnitOptions();
-                    renderLeaderboard('quiz2', 'leaderboard-quiz2');
+                    renderLeaderboardUnitOptions2();
                     openNameModal();
                 })
                 .catch(function() {
@@ -3487,7 +3496,51 @@
                     </div>
                 </div>
                 <div class="mt-4 p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900">
-                    <strong>💡 重要ポイント（教科書 p.157）：</strong>骨の両端は<span class="important-word">関節</span>でつながり、筋肉の両端は<span class="important-word">けん</span>になって骨についています。骨だけでも筋肉だけでも動かすことはできません。
+                    <strong>💡 重要ポイント（教科書 p.157）：</strong>骨の両端は<span class="important-word">関節</span>でつながり、筋肉の両端は<span class="important-word">けん</span>になって骨についています。骨だけでも筋肉だけでも動かすことはできません。関節の両側には、ふつう1対の向かい合う筋肉（<span class="important-word">拮抗筋</span>）がついていて、どちらか一方が縮むことで関節の部分が曲がります。筋肉も細胞からできています。
+                </div>
+            </div>
+
+            <!-- 活用：学びをいかして考えよう（可動域） -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                <div class="flex items-center gap-2">
+                    <span class="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-bold">活用</span>
+                    <h3 class="text-base font-bold text-slate-800 flex items-center gap-1.5">
+                        <i class="fa-solid fa-hand-sparkles text-emerald-500"></i> 学びをいかして考えよう
+                    </h3>
+                </div>
+                <p class="text-sm text-slate-600 leading-relaxed">手首やひじ、肩がどのような動きをするのか、実際に動かして調べてみよう。1つの動きと関係している骨や関節をあげてみよう。</p>
+                <div class="bg-emerald-50 rounded-xl p-4 border border-emerald-100 space-y-1.5 text-xs text-slate-700">
+                    <p class="font-black text-emerald-900 mb-1">🖐️ 手首の動きの例</p>
+                    <p>・手の甲側に曲げる（<strong>背屈</strong>）　・手のひら側に曲げる（<strong>掌屈</strong>）</p>
+                    <p>・手のひらを小指側に曲げる（<strong>内転</strong>）　・手のひらを親指側に曲げる（<strong>外転</strong>）</p>
+                    <p class="mt-2 text-emerald-900 font-bold">💡 手首とひじ、肩では関節の動かせる向きや範囲（可動域）がちがう。</p>
+                </div>
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-slate-700">📝 気づいたこと（手首・ひじ・肩でどうちがった？）</label>
+                    <textarea id="activity-muscle-range" rows="2" oninput="wsAutoSave()" class="w-full text-sm p-3 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-400 outline-none transition-all placeholder-slate-400 bg-white" placeholder="手首は色々な向きに曲げられるけど、ひじは1方向にしか曲げられない…など"></textarea>
+                </div>
+            </div>
+
+            <!-- 参考資料 -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                <h3 class="text-lg font-bold text-slate-800 flex items-center gap-1.5">
+                    <i class="fa-solid fa-book-open text-violet-600"></i> 参考資料（もっと知りたい人へ）
+                </h3>
+                <div class="bg-violet-50 rounded-xl p-3 border border-violet-100 space-y-1">
+                    <p class="text-sm font-black text-violet-900">🦴 関節をなめらかに動かす「軟骨」</p>
+                    <p class="text-sm text-slate-700 leading-relaxed">関節でつながっている骨の先端は<span class="important-word">軟骨（なんこつ）</span>でおおわれていて、なめらかに動くようにできている。年をとると軟骨がすり減り、関節のなめらかさが失われて動かしにくくなることがある。</p>
+                </div>
+                <div class="bg-sky-50 rounded-xl p-3 border border-sky-100 space-y-1">
+                    <p class="text-sm font-black text-sky-900">🦵 かかととつながる「アキレス腱」</p>
+                    <p class="text-sm text-slate-700 leading-relaxed">けんは、非常に強い繊維でできた丈夫な組織で、筋肉と骨をつないでいる。ふくらはぎの筋肉は、かかとの骨と<span class="important-word">アキレス腱</span>という太いけんでつながっている。</p>
+                </div>
+                <div class="bg-amber-50 rounded-xl p-3 border border-amber-100 space-y-1">
+                    <p class="text-sm font-black text-amber-900">🐢 カメの甲羅も骨？</p>
+                    <p class="text-sm text-slate-700 leading-relaxed">形や運動のようすが大きくちがっていても、同じ脊椎動物であれば体には骨格とそれを動かす筋肉がある。たとえば、カメの甲羅は、実は<strong>ろっ骨（肋骨）が変形したもの</strong>である。</p>
+                </div>
+                <div class="bg-rose-50 rounded-xl p-3 border border-rose-100 space-y-1">
+                    <p class="text-sm font-black text-rose-900">🍗 おてがる科学：ニワトリの手羽先を観察しよう</p>
+                    <p class="text-sm text-slate-700 leading-relaxed">ニワトリの手羽先の皮をはいで観察すると、骨と筋肉が白い筋（けん）でつながっているようすが観察できる。筋肉をつまんで引っ張ると、けんを通して骨が動くようすがわかる。筋肉はエネルギーを消費して<strong>縮む</strong>ことしかできず、うでが伸びるのは反対側の筋肉が縮んでいるからである。※実際に行うときは、先生の指示に従い、衛生・安全に気をつけて行おう。</p>
                 </div>
             </div>
 
@@ -3540,8 +3593,10 @@
                 </div>
                 <div id="anchor-muscle-sample" class="scroll-mt-28"></div><div id="teacher-sample-muscle" class="p-4 bg-indigo-50/50 rounded-xl border border-indigo-100 hidden text-xs text-slate-700 space-y-2 leading-relaxed">
                     <h4 class="font-bold text-indigo-900 flex items-center gap-1"><i class="fa-solid fa-graduation-cap"></i> 教科書のまとめお手本</h4>
-                    <p>・骨の両端は<strong>関節</strong>でつながり、筋肉の両端の<strong>けん</strong>が骨についている。</p>
+                    <p>・骨の両端は<strong>関節</strong>でつながり、筋肉の両端の<strong>けん</strong>が骨についている。関節でつながる骨の先端は<strong>軟骨</strong>でおおわれ、なめらかに動く。</p>
                     <p>・うでを曲げるとき→曲げる筋肉が<strong>縮み</strong>、伸ばす筋肉が<strong>ゆるむ</strong>。うでを伸ばすときはその逆。骨だけでも筋肉だけでも動かすことはできない。</p>
+                    <p>・関節の両側には向かい合う1対の筋肉（<strong>拮抗筋</strong>）があり、どちらか一方が縮むことで関節が曲がる。ふくらはぎの筋肉とかかとの骨をつなぐけんを、特に<strong>アキレス腱</strong>という。</p>
+                    <p>・骨は、からだを支えると同時に、<strong>内臓や脳などを保護する</strong>はたらきも持つ。カメの甲羅のように、動物によって骨の形は大きく変化していることもある（例：カメの甲羅＝ろっ骨が変形したもの）。</p>
                 </div>
             </div>
 
@@ -3566,10 +3621,23 @@
                 <div class="text-center mb-4">
                     <span class="bg-violet-100 text-violet-800 text-[10px] px-2 py-0.5 rounded font-bold uppercase">第2章 確認テスト（p.148〜158）</span>
                 </div>
-                <div id="quiz2-playing">
+
+                <!-- 単元選択画面 -->
+                <div id="quiz2-select">
+                    <p class="text-xs text-slate-500 text-center mb-4">挑戦したい単元を選んでね</p>
+                    <div id="quiz2-select-grid" class="grid grid-cols-2 gap-3"></div>
+                </div>
+
+                <div id="quiz2-playing" class="hidden">
+                    <div class="flex items-center justify-between mb-3">
+                        <span onclick="backToQuiz2Select()" class="text-[11px] text-slate-400 hover:text-slate-600 cursor-pointer font-semibold flex items-center gap-1">
+                            <i class="fa-solid fa-chevron-left text-[9px]"></i> 単元を選び直す
+                        </span>
+                        <span id="quiz2-current-label" class="text-[11px] font-black text-violet-700 bg-violet-50 px-2 py-0.5 rounded-full">単元</span>
+                    </div>
                     <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
                         <span class="bg-violet-100 text-violet-800 text-xs px-2.5 py-1 rounded-full font-bold" id="quiz2-progress-badge">第 1 問</span>
-                        <div class="text-sm font-semibold text-slate-500">正解数: <span id="quiz2-score" class="text-violet-600 font-bold">0</span> / 8</div>
+                        <div class="text-sm font-semibold text-slate-500">正解数: <span id="quiz2-score" class="text-violet-600 font-bold">0</span> / <span id="quiz2-total-badge">12</span></div>
                     </div>
                     <div class="w-full bg-slate-100 h-2 rounded-full mb-6 overflow-hidden">
                         <div id="quiz2-progress-bar" class="bg-violet-500 h-2 w-[0%] transition-all"></div>
@@ -3593,27 +3661,31 @@
                 </div>
                 <div id="quiz2-result" class="hidden text-center py-6">
                     <div class="text-5xl text-yellow-400 mb-4 animate-bounce"><i class="fa-solid fa-trophy"></i></div>
-                    <h2 class="text-xl font-black text-slate-800 mb-2">第2章テストお疲れ様でした！</h2>
+                    <h2 class="text-xl font-black text-slate-800 mb-1">確認テストお疲れ様でした！</h2>
+                    <p id="quiz2-result-label" class="text-xs font-bold text-violet-600 mb-3">単元</p>
                     <div class="bg-violet-50 max-w-sm mx-auto p-5 rounded-2xl border-2 border-violet-100 mb-6">
                         <div class="text-[10px] text-violet-800 font-bold uppercase tracking-wider mb-1">あなたのスコア</div>
-                        <div class="text-3xl font-black text-violet-600"><span id="result2-score">0</span> <span class="text-sm text-slate-600">/ 8 問 正解</span></div>
+                        <div class="text-3xl font-black text-violet-600"><span id="result2-score">0</span> <span class="text-sm text-slate-600">/ <span id="quiz2-total-result">12</span> 問 正解</span></div>
                         <div id="result2-comment" class="text-xs text-slate-700 mt-3 font-semibold"></div>
                     </div>
-                    <button onclick="resetQuiz2()" class="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-lg shadow-sm transition-all text-xs inline-flex items-center gap-2">
-                        <i class="fa-solid fa-rotate-right"></i> もう一度挑戦する
-                    </button>
+                    <div class="flex flex-wrap items-center justify-center gap-2.5">
+                        <button onclick="resetQuiz2()" class="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-lg shadow-sm transition-all text-xs inline-flex items-center gap-2">
+                            <i class="fa-solid fa-rotate-right"></i> もう一度挑戦する
+                        </button>
+                        <button onclick="backToQuiz2Select()" class="px-5 py-2.5 bg-white hover:bg-slate-50 text-slate-600 font-bold rounded-lg shadow-sm border border-slate-200 transition-all text-xs inline-flex items-center gap-2">
+                            <i class="fa-solid fa-grip"></i> ほかの単元に挑戦する
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            <!-- クラスの記録（第2章） -->
-            <div class="max-w-2xl mx-auto bg-white p-5 rounded-2xl shadow-sm border border-slate-200 mt-4">
-                <h3 class="text-sm font-black text-slate-800 mb-3 flex items-center gap-2">
-                    <i class="fa-solid fa-ranking-star text-amber-500"></i> クラスのベスト記録（第2章確認テスト）
+            <!-- クラスの記録（第2章：テストごとに全部表示） -->
+            <div class="max-w-2xl mx-auto mt-6">
+                <h3 class="text-sm font-black text-slate-800 mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-ranking-star text-amber-500"></i> クラスのベスト記録
                 </h3>
-                <div id="leaderboard-quiz2" class="space-y-1.5">
-                    <p class="text-xs text-slate-400 text-center py-2">読み込み中…</p>
-                </div>
-                <p class="text-[10px] text-slate-400 mt-2 text-center">それぞれの自己ベストの点数が表示されます</p>
+                <div id="leaderboard-quiz2-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-6"></div>
+                <p class="text-[10px] text-slate-400 mt-3 text-center">それぞれの自己ベストの点数が表示されます（テストごとに順位がつきます）</p>
             </div>
         </section>
 
@@ -4157,7 +4229,8 @@
             amber:  { bg: 'bg-amber-50',  border: 'border-amber-200',  text: 'text-amber-700',  icon: 'text-amber-500',  badge: 'bg-amber-100 text-amber-800' },
             sky:    { bg: 'bg-sky-50',    border: 'border-sky-200',    text: 'text-sky-700',    icon: 'text-sky-500',    badge: 'bg-sky-100 text-sky-800' },
             rose:   { bg: 'bg-rose-50',   border: 'border-rose-200',   text: 'text-rose-700',   icon: 'text-rose-500',   badge: 'bg-rose-100 text-rose-800' },
-            cyan:   { bg: 'bg-cyan-50',   border: 'border-cyan-200',   text: 'text-cyan-700',   icon: 'text-cyan-500',   badge: 'bg-cyan-100 text-cyan-800' }
+            cyan:   { bg: 'bg-cyan-50',   border: 'border-cyan-200',   text: 'text-cyan-700',   icon: 'text-cyan-500',   badge: 'bg-cyan-100 text-cyan-800' },
+            violet: { bg: 'bg-violet-50', border: 'border-violet-200', text: 'text-violet-700', icon: 'text-violet-500', badge: 'bg-violet-100 text-violet-800' }
         };
 
         function renderQuizSelectGrid() {
@@ -4351,26 +4424,107 @@
             if (activeBtn) activeBtn.classList.add('tab-active');
         }
 
-        // ------------------ 第2章クイズ ------------------
-        const quiz2Data = [
+        // ------------------ 第2章クイズ（単元ごとに3つに分割） ------------------
+        const quizStimulusData = [
             { q:"外界からの光・音・においなどの刺激を受けとる器官をまとめて何というか？（p.148）", choices:["運動器官","感覚器官","中枢神経","末しょう神経"], correct:1, exp:"目・耳・鼻・舌・皮膚などの「感覚器官」が外界の刺激を受けとります。" },
-            { q:"目（視覚）において、光が最初に通過し像を網膜に結ぶレンズのはたらきをする部分は何か？（p.150）", choices:["鼓膜","うずまき管","水晶体（レンズ）","虹彩"], correct:2, exp:"外から入った光は水晶体（レンズ）を通り、網膜に像を結びます。" },
-            { q:"音（空気の振動）が最初に振動させる、耳の入り口付近にある薄い膜を何というか？（p.150）", choices:["うずまき管","耳小骨","鼓膜","網膜"], correct:2, exp:"音の振動はまず「鼓膜」を振動させ、次に耳小骨、うずまき管へと伝わります。" },
-            { q:"脳やせきずいをまとめて何というか？（p.152）", choices:["感覚神経","末しょう神経","中枢神経","運動神経"], correct:2, exp:"脳とせきずいをまとめて「中枢神経」といいます。" },
-            { q:"感覚器官から中枢神経へ刺激の信号を伝える神経を何というか？（p.153）", choices:["運動神経","中枢神経","反射神経","感覚神経"], correct:3, exp:"感覚器官から脳・せきずいへ信号を伝えるのが「感覚神経」、脳・せきずいから運動器官へ命令を伝えるのが「運動神経」です。" },
-            { q:"熱いものに触れて思わず手を引っ込めるような、意識とは無関係に起こるすばやい反応を何というか？（p.154）", choices:["反応","感覚","反射","伝導"], correct:2, exp:"意識とは無関係に起こる反応を「反射」といいます。信号が脳を経由せずせきずいで折り返すため非常に速い。" },
+            { q:"目（視覚）において、光が最初に通過し像のピントを合わせるレンズのはたらきをする部分は何か？（p.150）", choices:["鼓膜","うずまき管","水晶体（レンズ）","虹彩"], correct:2, exp:"外から入った光は水晶体（レンズ）を通り、網膜に像を結びます。" },
+            { q:"光を刺激として受けとる細胞が並び、像が結ばれる膜を何というか？（p.150）", choices:["虹彩","水晶体","網膜","角膜"], correct:2, exp:"光は網膜に像を結び、そこに並ぶ視細胞が刺激を受けとります。" },
+            { q:"ひとみの大きさを変えて、目に入る光の量を調節する部分は？（p.150）", choices:["虹彩","網膜","水晶体","毛様体"], correct:0, exp:"「虹彩」がひとみの大きさを調節し、目に入る光の量を変えます。" },
+            { q:"網膜の中で、視神経が集まっていて光を感じる細胞が存在しない部分を何というか？（p.150）", choices:["盲点","虹彩","毛様体","黄斑"], correct:0, exp:"視神経の出口にあたる「盲点（盲斑）」には光を感じる細胞がありません。" },
+            { q:"音（空気の振動）が最初に振動させる、耳の入り口付近にある薄い膜を何というか？（p.150）", choices:["うずまき管","耳小骨","鼓膜","半規管"], correct:2, exp:"音の振動はまず「鼓膜」を振動させ、次に耳小骨、うずまき管へと伝わります。" },
+            { q:"鼓膜の振動を耳の奥へ伝える、3つの小さな骨を何というか？（p.150）", choices:["耳小骨","うずまき管","半規管","鼓膜"], correct:0, exp:"鼓膜の振動は「耳小骨」を経て、うずまき管に伝わります。" },
+            { q:"音の振動を刺激として受けとり、その信号を脳へ伝える、耳の奥にあるらせん状の器官は？（p.150）", choices:["半規管","耳小骨","うずまき管","鼓膜"], correct:2, exp:"「うずまき管」の中の細胞が音の刺激を受けとり、信号を脳へ送ります。" },
+            { q:"からだの傾きや回転を感じ、平衡感覚に関わる耳の奥の器官は？（p.150）", choices:["うずまき管","半規管","耳小骨","鼓膜"], correct:1, exp:"「半規管」はからだの傾きや回転を感じ取り、平衡感覚に関わります。" },
+            { q:"においの分子を刺激として受けとる感覚器官はどれか？（p.151）", choices:["舌","鼻","皮膚","耳"], correct:1, exp:"においをもたらす物質による刺激を受けとるのは「鼻」です。" },
+            { q:"皮膚にある、触覚・圧覚・温度覚・痛覚などを感じ取る部分を何というか？（p.151）", choices:["感覚点","感覚神経","運動点","末しょう神経"], correct:0, exp:"皮膚には「感覚点」があり、場所によってその数はちがいます。" },
+            { q:"感覚器官が受けとった刺激の信号を、脳やせきずいに伝える神経を何というか？（p.151）", choices:["運動神経","感覚神経","中枢神経","反射神経"], correct:1, exp:"感覚器官からの信号は「感覚神経」を通って脳やせきずいへ伝えられます。" }
+        ];
+
+        const quizNerveData = [
+            { q:"脳とせきずいをまとめて何というか？（p.152）", choices:["末しょう神経","中枢神経","感覚神経","運動神経"], correct:1, exp:"脳とせきずいをまとめて「中枢神経」といいます。" },
+            { q:"中枢神経から枝分かれし、全身に広がっている神経を何というか？（p.152）", choices:["中枢神経","末しょう神経","反射神経","自律神経"], correct:1, exp:"中枢神経から枝分かれして全身に広がる神経を「末しょう神経」といい、感覚神経と運動神経に分けられます。" },
+            { q:"中枢神経からの命令の信号を、筋肉などの運動器官に伝える神経を何というか？（p.153）", choices:["感覚神経","運動神経","中枢神経","反射神経"], correct:1, exp:"脳・せきずいからの命令を運動器官に伝えるのが「運動神経」です。" },
+            { q:"判断・記憶・思考など、心のはたらきの中心となる脳の部分は？（p.152）", choices:["小脳","大脳","延髄","間脳"], correct:1, exp:"「大脳」は、考える・判断する・記憶するなど心のはたらきの中心です。" },
+            { q:"からだのバランスを保ち、運動を調整する脳の部分は？（p.152）", choices:["大脳","間脳","小脳","延髄"], correct:2, exp:"「小脳」はからだのバランスをとり、運動を調整するはたらきをします。" },
+            { q:"呼吸や心臓の動きなど、生きるために欠かせないはたらきを調整する脳の部分は？（p.152）", choices:["間脳","中脳","小脳","延髄"], correct:3, exp:"「延髄」は呼吸や心臓の動きなど、生命維持に欠かせないはたらきを調整します。" },
+            { q:"刺激に対して、意識とは無関係に起こる速い反応を何というか？（p.154）", choices:["反応","反射","判断","伝達"], correct:1, exp:"意識とは無関係に起こる反応を「反射」といいます。" },
             { q:"反射が「意識して起こる反応」よりも速い理由として正しいものはどれか？（p.155）", choices:["筋肉が特別に強いから","信号がせきずいで折り返し、脳を経由しないから","感覚器官の感度が高いから","運動神経が太いから"], correct:1, exp:"反射では信号がせきずいで折り返し、脳を経由しないため経路が短く、反応が速くなります。" },
-            { q:"うでを曲げるとき、「曲げる筋肉」と「伸ばす筋肉」はそれぞれどうなるか？（p.157）", choices:["両方縮む","曲げる筋肉が縮み、伸ばす筋肉がゆるむ","両方ゆるむ","伸ばす筋肉が縮み、曲げる筋肉がゆるむ"], correct:1, exp:"うでを曲げるときは「曲げる筋肉が縮み、伸ばす筋肉がゆるむ」。伸ばすときはその逆になります。" }
+            { q:"ひざの下を軽くたたくと足が跳ね上がる反射を何というか？（p.155）", choices:["屈筋反射","瞳孔反射","膝蓋腱反射","咳嗽反射"], correct:2, exp:"ひざの皿の下をたたくと足がはね上がる反射を「膝蓋腱反射」といい、せきずいが反射中枢です。" },
+            { q:"熱いものに触れて思わず手を引っこめる反射は、何が反射の中枢となって起こるか？（p.155）", choices:["大脳","せきずい","中脳","延髄"], correct:1, exp:"熱いものに触れて手を引っこめる反射（屈筋反射）は「せきずい」が反射中枢です。" },
+            { q:"意識して起こる反応の経路として正しい順番はどれか？（p.153）", choices:["刺激→感覚器官→感覚神経→脳→運動神経→運動器官","刺激→運動器官→運動神経→脳→感覚神経→感覚器官","刺激→感覚器官→運動神経→脳→感覚神経→運動器官","刺激→脳→感覚神経→感覚器官→運動神経→運動器官"], correct:0, exp:"意識して起こる反応は「刺激→感覚器官→感覚神経→脳→運動神経→運動器官」の順で伝わります。" },
+            { q:"明るいところから暗い所に入るとひとみが大きくなるような反射で、反射の中枢となっているのは？（p.155）", choices:["せきずい","大脳","中脳","延髄"], correct:2, exp:"ひとみの大きさが変わる瞳孔反射は「中脳」が反射中枢です。" }
+        ];
+
+        const quizMuscleData = [
+            { q:"骨と骨のつなぎ目で、曲げのばしができる部分を何というか？（p.157）", choices:["けん","関節","軟骨","拮抗筋"], correct:1, exp:"骨と骨のつなぎ目を「関節」といいます。" },
+            { q:"筋肉の両端にある、骨についている丈夫な繊維の組織を何というか？（p.157）", choices:["関節","軟骨","けん","靭帯"], correct:2, exp:"筋肉の両端は「けん」という丈夫な組織になって骨についています。" },
+            { q:"関節でつながっている骨の先端をおおい、なめらかに動けるようにしているものは何か？", choices:["けん","軟骨","拮抗筋","関節液"], correct:1, exp:"関節の骨の先端は「軟骨」でおおわれていて、なめらかに動くようにできています。" },
+            { q:"関節の両側にあり、たがいに向かい合ってはたらく1対の筋肉を何というか？", choices:["平滑筋","拮抗筋","骨格筋","随意筋"], correct:1, exp:"関節の両側にある、向かい合ってはたらく1対の筋肉を「拮抗筋」といいます。" },
+            { q:"うでを曲げるとき、「曲げる筋肉」と「伸ばす筋肉」はそれぞれどうなるか？（p.157）", choices:["両方縮む","曲げる筋肉が縮み、伸ばす筋肉がゆるむ","両方ゆるむ","伸ばす筋肉が縮み、曲げる筋肉がゆるむ"], correct:1, exp:"うでを曲げるときは「曲げる筋肉が縮み、伸ばす筋肉がゆるむ」。伸ばすときはその逆になります。" },
+            { q:"ふくらはぎの筋肉とかかとの骨をつなぐ、特に太くて丈夫なけんを何というか？", choices:["アキレス腱","靭帯","腱鞘","拮抗筋"], correct:0, exp:"ふくらはぎの筋肉とかかとの骨は「アキレス腱」という太いけんでつながっています。" },
+            { q:"骨には、からだを支えるはたらきの他にどんなはたらきがあるか？", choices:["栄養を消化するはたらき","内臓や脳を保護するはたらき","酸素を運ぶはたらき","刺激を感じるはたらき"], correct:1, exp:"骨は、からだを支えると同時に、内臓や脳などを保護するはたらきも持っています。" },
+            { q:"カメの甲羅は、何が変形してできたものか？", choices:["皮膚","ろっ骨（肋骨）","歯","つめ"], correct:1, exp:"カメの甲羅は、ろっ骨（肋骨）が変形してできたものです。" },
+            { q:"筋肉が自分の力で行えるのは、「縮む」ことと「ゆるむ」ことのうちどちらか？", choices:["縮むことだけ","ゆるむことだけ","どちらも同じようにできる","どちらもできない"], correct:0, exp:"筋肉は自分の力で「縮む」ことしかできず、伸びるのは反対側の筋肉が縮んでいるからです。" },
+            { q:"骨だけ、または筋肉だけでからだを動かすことはできるか？（p.157）", choices:["骨だけでも動かせる","筋肉だけでも動かせる","骨と筋肉の両方がないと動かせない","どちらも不要である"], correct:2, exp:"骨だけでも筋肉だけでもからだを動かすことはできません。骨と筋肉の両方が必要です。" },
+            { q:"陸上にいる脊椎動物の多くは、何のはたらきによってからだを動かしているか？（p.156）", choices:["骨と筋肉","神経だけ","皮膚だけ","血液だけ"], correct:0, exp:"陸上の脊椎動物の多くは、骨と筋肉のはたらきによってからだを動かします。" },
+            { q:"手首を手の甲側に曲げる動きを何というか？", choices:["掌屈","背屈","内転","外転"], correct:1, exp:"手の甲側に曲げる動きを「背屈」、手のひら側に曲げる動きを「掌屈」といいます。" }
+        ];
+
+        // 単元テストの一覧（第2章「確認テスト」タブの「単元を選ぶ」カードに使う）
+        const QUIZ_SETS2 = [
+            { id: "quiz2-stimulus", label: "刺激と感覚器官", sub: "目・耳・鼻・舌・皮膚",       icon: "fa-eye",        color: "violet", data: quizStimulusData },
+            { id: "quiz2-nerve",    label: "神経のはたらき", sub: "中枢神経・末しょう神経・反射", icon: "fa-brain",      color: "rose",   data: quizNerveData },
+            { id: "quiz2-muscle",   label: "骨と筋肉",       sub: "関節・けん・拮抗筋",         icon: "fa-bone",       color: "amber",  data: quizMuscleData }
         ];
 
         let quiz2Index = 0, quiz2Score = 0, isAnswered2 = false;
+        let activeQuiz2Data = quizStimulusData;
+        let activeQuiz2Id = 'quiz2-stimulus';
+
+        function renderQuiz2SelectGrid() {
+            const grid = document.getElementById('quiz2-select-grid');
+            if (!grid) return;
+            grid.innerHTML = QUIZ_SETS2.map(function(set) {
+                const c = QUIZ_COLOR_CLASSES[set.color] || QUIZ_COLOR_CLASSES.violet;
+                return '<button onclick="startQuiz2Set(\'' + set.id + '\')" class="' + c.bg + ' ' + c.border + ' border rounded-2xl p-4 text-left hover:shadow-md hover:-translate-y-0.5 transition-all">'
+                    + '<div class="flex items-center justify-between mb-2">'
+                    + '<i class="fa-solid ' + set.icon + ' ' + c.icon + ' text-lg"></i>'
+                    + '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full ' + c.badge + '">全' + set.data.length + '問</span>'
+                    + '</div>'
+                    + '<div class="font-black text-sm ' + c.text + '">' + set.label + '</div>'
+                    + '<div class="text-[10px] text-slate-500 mt-0.5">' + set.sub + '</div>'
+                    + '</button>';
+            }).join('');
+        }
+
+        function startQuiz2Set(setId) {
+            const set = QUIZ_SETS2.find(function(s) { return s.id === setId; });
+            if (!set) return;
+            activeQuiz2Data = set.data;
+            activeQuiz2Id = set.id;
+            quiz2Index = 0;
+            quiz2Score = 0;
+            document.getElementById('quiz2-current-label').innerText = set.label;
+            document.getElementById('quiz2-select').classList.add('hidden');
+            document.getElementById('quiz2-playing').classList.remove('hidden');
+            document.getElementById('quiz2-result').classList.add('hidden');
+            renderQuestion2();
+        }
+
+        function backToQuiz2Select() {
+            document.getElementById('quiz2-select').classList.remove('hidden');
+            document.getElementById('quiz2-playing').classList.add('hidden');
+            document.getElementById('quiz2-result').classList.add('hidden');
+        }
 
         function renderQuestion2() {
             isAnswered2 = false;
-            const q = quiz2Data[quiz2Index];
+            const q = activeQuiz2Data[quiz2Index];
             document.getElementById('quiz2-progress-badge').innerText = `第 ${quiz2Index+1} 問`;
             document.getElementById('quiz2-score').innerText = quiz2Score;
-            document.getElementById('quiz2-progress-bar').style.width = `${(quiz2Index/quiz2Data.length)*100}%`;
+            document.getElementById('quiz2-total-badge').innerText = activeQuiz2Data.length;
+            document.getElementById('quiz2-total-result').innerText = activeQuiz2Data.length;
+            document.getElementById('quiz2-progress-bar').style.width = `${(quiz2Index/activeQuiz2Data.length)*100}%`;
             document.getElementById('quiz2-question').innerText = `Q. ${q.q}`;
             for(let i=0;i<4;i++){
                 const btn = document.getElementById(`choice2-${i}`);
@@ -4385,7 +4539,7 @@
         function checkAnswer2(idx) {
             if(isAnswered2) return;
             isAnswered2 = true;
-            const q = quiz2Data[quiz2Index];
+            const q = activeQuiz2Data[quiz2Index];
             if(idx === q.correct) quiz2Score++;
             document.getElementById('quiz2-score').innerText = quiz2Score;
             for(let i=0;i<4;i++){
@@ -4406,27 +4560,30 @@
                 document.getElementById('feedback2-title').innerText='ざんねん！';
             }
             document.getElementById('feedback2-explanation').innerHTML=`<strong>教科書の解説:</strong> ${q.exp}`;
-            document.getElementById('quiz2-progress-bar').style.width = `${((quiz2Index+1)/quiz2Data.length)*100}%`;
+            document.getElementById('quiz2-progress-bar').style.width = `${((quiz2Index+1)/activeQuiz2Data.length)*100}%`;
             document.getElementById('quiz2-next-btn').classList.remove('hidden');
             document.getElementById('quiz2-next-btn').classList.add('flex');
         }
 
         function goToNextQuestion2() {
-            if(quiz2Index < quiz2Data.length-1){
+            if(quiz2Index < activeQuiz2Data.length-1){
                 quiz2Index++;
-                saveQuizProgress('quiz2', quiz2Index, quiz2Score);
+                saveQuizProgress(activeQuiz2Id, quiz2Index, quiz2Score);
                 renderQuestion2();
             }
             else {
                 document.getElementById('quiz2-playing').classList.add('hidden');
                 document.getElementById('quiz2-result').classList.remove('hidden');
                 document.getElementById('result2-score').innerText = quiz2Score;
-                saveQuizResult('quiz2', quiz2Score, quiz2Data.length);
-                clearQuizProgress('quiz2');
+                const activeSet2 = QUIZ_SETS2.find(function(s) { return s.id === activeQuiz2Id; });
+                document.getElementById('quiz2-result-label').innerText = activeSet2 ? activeSet2.label : '';
+                saveQuizResult(activeQuiz2Id, quiz2Score, activeQuiz2Data.length);
+                clearQuizProgress(activeQuiz2Id);
                 const c = document.getElementById('result2-comment');
-                if(quiz2Score===8) c.innerText='完璧です！第2章を完全にマスターしています！';
-                else if(quiz2Score>=6) c.innerText='よくできました！間違えたところを図で確認しよう。';
-                else if(quiz2Score>=4) c.innerText='もう少し！神経の経路と反射の違いを復習しよう。';
+                const scorePct2 = (quiz2Score / activeQuiz2Data.length) * 100;
+                if(scorePct2===100) c.innerText='完璧です！この単元は100%理解しています！';
+                else if(scorePct2>=80) c.innerText='素晴らしい！間違えたところをタブのノートで復習しよう。';
+                else if(scorePct2>=50) c.innerText='合格ラインです。もう一度ノートを見直してみよう。';
                 else c.innerText='各タブの図解をもう一度確認してから挑戦しよう！';
             }
         }
@@ -4436,6 +4593,28 @@
             document.getElementById('quiz2-playing').classList.remove('hidden');
             document.getElementById('quiz2-result').classList.add('hidden');
             renderQuestion2();
+        }
+
+        // ---- 第2章：単元ごとのランキングを全部同時に表示 ----
+        function renderLeaderboardUnitOptions2() {
+            const grid = document.getElementById('leaderboard-quiz2-grid');
+            if (!grid) return;
+            grid.innerHTML = QUIZ_SETS2.map(function(set) {
+                const c = QUIZ_COLOR_CLASSES[set.color] || QUIZ_COLOR_CLASSES.violet;
+                return '<div>'
+                    + '<div class="flex items-center gap-1.5 mb-2">'
+                    + '<i class="fa-solid ' + set.icon + ' ' + c.icon + ' text-xs"></i>'
+                    + '<span class="text-xs font-black ' + c.text + '">' + set.label + '</span>'
+                    + '<span class="text-[10px] text-slate-400">全' + set.data.length + '問</span>'
+                    + '</div>'
+                    + '<div id="leaderboard-' + set.id + '" class="space-y-1.5 border-l-2 ' + c.border + ' pl-3">'
+                    + '<p class="text-xs text-slate-400 py-1">読み込み中…</p>'
+                    + '</div>'
+                    + '</div>';
+            }).join('');
+            QUIZ_SETS2.forEach(function(set) {
+                renderLeaderboard(set.id, 'leaderboard-' + set.id);
+            });
         }
 
 
@@ -4684,7 +4863,7 @@
             'nerve-daily-2-stim','nerve-daily-2-organ','nerve-daily-2-brain','nerve-daily-2-react',
             'nerve-note-pathway','nerve-note-reflex-types',
             'muscle-bend-biceps','muscle-bend-triceps','muscle-stretch-biceps','muscle-stretch-triceps',
-            'activity-muscle'
+            'activity-muscle','activity-muscle-range'
         ];
         var WS_SELECTS = ['user-table-A','user-table-B','user-table-C','user-table-D'];
         var WS_RADIOS  = ['user-note-absorption-changed','user-note-excretion-changed'];
@@ -4805,7 +4984,7 @@
             updateLabUI();
             updateLungModel(150);
             renderQuizSelectGrid();
-            renderQuestion2();
+            renderQuiz2SelectGrid();
             switchTab('home');
             loadAllVideos();
             loadReflectLinks();
